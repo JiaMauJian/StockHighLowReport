@@ -1,0 +1,24 @@
+# 敏感資料
+token.txt
+
+# 資料庫
+*.db
+
+# PyInstaller 輸出
+build/
+dist/
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+
+# 工具
+sqlite3.exe
+
+# Excel 輸出檔
+*.xlsx
+*.xlsm

@@ -20,6 +20,7 @@ def update_daily_data_from_last_date(token: str, db_path: str = 'stock.db'):
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA cache_size = 100000;")
+    conn.execute("PRAGMA mmap_size = 536870912;")  # 512MB memory-mapped I/O
 
     # 今天日期
     today = datetime.today().strftime("%Y-%m-%d")
@@ -39,55 +40,62 @@ def update_daily_data_from_last_date(token: str, db_path: str = 'stock.db'):
         cursor.execute("SELECT DISTINCT stock_id FROM stock_daily WHERE date = ?", (last_date,))
         db_stock_ids = set(row[0] for row in cursor.fetchall())
 
-        if last_date < today:
-            print("索引移除中...")
-            cursor.execute('DROP INDEX IF EXISTS idx_stock_daily_stock_id_date;')
+        # 移除索引
+        # print("索引移除中...")
+        # cursor.execute('DROP INDEX IF EXISTS idx_stock_daily_stock_id_date;')
+        # conn.commit()
+        # print("索引移除完成")
+
+        # 如果最新日期是今天，先刪除今天資料
+        if last_date == today:
+            print(f"{today} 資料已存在，先刪除重塞")
+            cursor.execute("DELETE FROM stock_daily WHERE date = ?", (today,))
             conn.commit()
-            print("索引移除完成")
+            # 從昨天開始抓資料
+            last_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
 
-            while last_date < today:
-                # 下一天
-                next_date = (datetime.strptime(last_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        # 從 last_date + 1 開始抓資料
+        while last_date < today:
+            next_date = (datetime.strptime(last_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
 
-                # 抓取資料
-                df_daily = api.taiwan_stock_daily(start_date=next_date)
+            # 抓取資料
+            df_daily = api.taiwan_stock_daily(start_date=next_date)
 
-                if df_daily.empty:
-                    print(f"{next_date} 無資料")
-                    last_date = next_date
-                    continue
+            if df_daily.empty:
+                print(f"{next_date} 無資料")
+                last_date = next_date
+                continue
 
-                # 欄位過濾與股票代號過濾
-                df_daily = df_daily[["date", "stock_id", "close"]]
-                df_daily = df_daily[df_daily["stock_id"].isin(db_stock_ids)]
+            # 欄位過濾與股票代號過濾
+            df_daily = df_daily[["date", "stock_id", "close"]]
+            df_daily = df_daily[df_daily["stock_id"].isin(db_stock_ids)]
 
-                if df_daily.empty:
-                    print(f"{next_date} 無資料（過濾後）")
-                    last_date = next_date
-                    continue
+            if df_daily.empty:
+                print(f"{next_date} 無資料（過濾後）")
+                last_date = next_date
+                continue
 
-                # 批次寫入資料
-                conn.execute("BEGIN")
-                for chunk in split_dataframe(df_daily, 300):
-                    chunk.to_sql(
-                        'stock_daily',
-                        conn,
-                        if_exists='append',
-                        index=False,
-                        method='multi'
-                    )
-                conn.commit()
-                print(f"{next_date} 已寫入 {len(df_daily)} 筆")
-
-                # 更新日期
-                last_date = df_daily["date"].max()
-
-            print("建立索引中...")
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
+            # 批次寫入資料
+            conn.execute("BEGIN")
+            for chunk in split_dataframe(df_daily, 300):
+                chunk.to_sql(
+                    'stock_daily',
+                    conn,
+                    if_exists='append',
+                    index=False,
+                    method='multi'
+                )
             conn.commit()
-            print("索引建立完成")
-        else:
-            print("資料已是最新")
+            print(f"{next_date} 已寫入 {len(df_daily)} 筆")
+
+            # 更新日期
+            last_date = df_daily["date"].max()
+
+        # 重建索引
+        # print("建立索引中...")
+        # cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
+        # conn.commit()
+        # print("索引建立完成")
 
     except Exception as e:
         print(f"錯誤發生：{e}")

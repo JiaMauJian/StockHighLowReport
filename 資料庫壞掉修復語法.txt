@@ -1,0 +1,3 @@
+sqlite3 stock.db ".recover" | sqlite3 stock_new.db
+
+成功後把 stock_new.db 改名為 stock.db 替換掉原本的

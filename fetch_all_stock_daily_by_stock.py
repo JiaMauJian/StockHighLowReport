@@ -9,7 +9,7 @@ def split_dataframe(df, chunk_size=90):
         yield df.iloc[start:start + chunk_size]
 
 
-def fetch_all_stock_daily(token, db_path='stock.db', default_start_date="2000-01-01"):
+def fetch_all_stock_daily(token, db_path='stock.db', default_start_date="1980-01-01"):
     # 登入 API
     api = DataLoader()
     api.login_by_token(api_token=token)
@@ -44,10 +44,10 @@ def fetch_all_stock_daily(token, db_path='stock.db', default_start_date="2000-01
     stock_ids.append("TAIEX")
 
     try:
-        print("建立索引中...")
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
-        conn.commit()
-        print("索引建立完成")
+        # print("建立索引中...")
+        # cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
+        # conn.commit()
+        # print("索引建立完成")
 
         # 一次查出所有 stock_id 的最新日期
         stock_id_dates = {}
@@ -63,10 +63,10 @@ def fetch_all_stock_daily(token, db_path='stock.db', default_start_date="2000-01
         end_date = datetime.today().strftime("%Y-%m-%d")
 
         # 若已有索引，先移除（避免影響 insert 效能）
-        print("索引移除中...")
-        cursor.execute('DROP INDEX IF EXISTS idx_stock_daily_stock_id_date;')
-        conn.commit()
-        print("索引移除完成")
+        # print("索引移除中...")
+        # cursor.execute('DROP INDEX IF EXISTS idx_stock_daily_stock_id_date;')
+        # conn.commit()
+        # print("索引移除完成")
 
         # 開始逐檔處理
         for i, stock_id in enumerate(stock_ids):
@@ -110,10 +110,10 @@ def fetch_all_stock_daily(token, db_path='stock.db', default_start_date="2000-01
                 continue
 
         # 重建索引加快查詢速度
-        print("建立索引中...")
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
-        conn.commit()
-        print("索引建立完成")
+        # print("建立索引中...")
+        # cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_stock_id_date ON stock_daily(stock_id, date);')
+        # conn.commit()
+        # print("索引建立完成")
 
         print("所有股票日資料抓取完畢！")
         conn.close()
