@@ -9,6 +9,7 @@ Initial full-history load is handled separately by init_high_low_60d.py.
 """
 
 import os
+import re
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
@@ -65,6 +66,49 @@ def make_arg(val):
 FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
 
 
+def fetch_trading_dates():
+    """取得所有台股交易日清單（sorted set）。"""
+    resp = requests.get(
+        FINMIND_API_URL,
+        headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
+        params={"dataset": "TaiwanStockTradingDate"},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    raw = resp.json().get("data", [])
+    dates = sorted(row["date"] for row in raw)
+    return dates
+
+
+def nearest_trading_date(date_str, trading_dates):
+    """若 date_str 不是交易日，往前找最近的交易日。"""
+    for d in reversed(trading_dates):
+        if d <= date_str:
+            return d
+    return trading_dates[0]
+
+
+def fetch_valid_stock_ids():
+    """取得台股（twse/tpex）4碼股票清單，排除 ETF 及其他非一般股票。"""
+    resp = requests.get(
+        FINMIND_API_URL,
+        headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
+        params={"dataset": "TaiwanStockInfo"},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    raw = resp.json().get("data", [])
+    if not raw:
+        return None
+
+    df = pd.DataFrame(raw)
+    df = df[df["stock_id"].apply(lambda x: bool(re.fullmatch(r"[1-9]\d{3}", x)))]
+    df = df[df["date"] == df["date"].max()]
+    df = df.drop_duplicates(subset=["stock_id"])
+    df = df[df["type"].isin(["twse", "tpex"])]
+    return set(df["stock_id"].tolist())
+
+
 def fetch_recent_stock_data():
     """
     Fetches enough data to cover all missing days + the 60-day rolling window.
@@ -86,13 +130,22 @@ def fetch_recent_stock_data():
     fetch_days = max(FETCH_WINDOW, days_missing + DAYS + 10)
     fetch_from = (today - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
 
+    trading_dates = fetch_trading_dates()
+    fetch_from = nearest_trading_date(fetch_from, trading_dates)
+    print(f"Adjusted fetch_from to nearest trading date: {fetch_from}")
+
+    print(f"Fetching valid stock list from FinMind ...")
+    valid_stock_ids = fetch_valid_stock_ids()
+    if valid_stock_ids:
+        print(f"Valid stock count: {len(valid_stock_ids)}")
+
     print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
     resp = requests.get(
         FINMIND_API_URL,
         headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
         params={
             "dataset": "TaiwanStockPrice",
-            "start_date": "2026-04-29"
+            "start_date": fetch_from,
         },
         timeout=120,
     )
@@ -103,6 +156,8 @@ def fetch_recent_stock_data():
         return pd.DataFrame()
 
     df = pd.DataFrame(raw)[["date", "stock_id", "close"]].copy()
+    if valid_stock_ids:
+        df = df[df["stock_id"].isin(valid_stock_ids)]
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df = df.dropna(subset=["close"])
     print(f"Fetched {len(df)} rows ({df['date'].nunique()} trading days, {df['stock_id'].nunique()} stocks)")
