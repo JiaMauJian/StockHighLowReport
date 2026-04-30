@@ -87,6 +87,7 @@ def fetch_recent_stock_data(api):
     # 新上市公司自然包含在內。本地 stock.db 才需要比對，因為要補抓新公司的完整歷史資料。
     print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
     df = api.taiwan_stock_daily(start_date=fetch_from, end_date=today_str)
+    print(f"FinMind returned {len(df)} rows, columns: {list(df.columns) if not df.empty else '[]'}")
     if df.empty:
         print("No data from FinMind")
         return pd.DataFrame()
