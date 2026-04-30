@@ -33,7 +33,10 @@ def fetch_missing_stock_data(token: str, db_path: str = 'stock.db'):
         missing_stock_ids = set(stock_ids) - db_stock_ids
 
         print(f"資料庫中缺少 {len(missing_stock_ids)} 檔股票")
-        print("發現新公司的 stock_id 有：", sorted(missing_stock_ids))
+        stock_info = df.set_index("stock_id")[["stock_name", "type"]].to_dict("index")
+        for sid in sorted(missing_stock_ids):
+            info = stock_info.get(sid, {})
+            print(f"  {sid} {info.get('stock_name', '')} ({info.get('type', '')})")
 
         if not missing_stock_ids:
             print("無需更新，無新公司資料")

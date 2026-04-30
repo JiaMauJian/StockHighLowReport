@@ -26,6 +26,12 @@ def update_daily_data_from_last_date(token: str, db_path: str = 'stock.db'):
     today = datetime.today().strftime("%Y-%m-%d")
 
     try:
+        # 先確認今日上櫃資料是否出來，若未出來則略過整個更新
+        df_check = api.taiwan_stock_daily(start_date=today)
+        if not df_check.empty and "TPEx" not in df_check["stock_id"].values:
+            print(f"今日 {today} 上櫃資料尚未出來，略過更新")
+            return
+
         # 查詢 TAIEX 最後一筆日期作為基準
         cursor.execute("SELECT MAX(date) FROM stock_daily WHERE stock_id = 'TAIEX'")
         result = cursor.fetchone()

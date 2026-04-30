@@ -1,5 +1,6 @@
 # 敏感資料
 token.txt
+.env
 
 # 資料庫
 *.db
