@@ -146,6 +146,7 @@ def fetch_recent_stock_data():
         params={
             "dataset": "TaiwanStockPrice",
             "start_date": fetch_from,
+            "end_date": today_str,
         },
         timeout=120,
     )
