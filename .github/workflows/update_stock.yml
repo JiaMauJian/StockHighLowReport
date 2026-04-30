@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: pip install --no-cache-dir -r requirements_ga.txt
 
+      - name: Check installed packages
+        run: pip list | grep -i tqdm
+
       - name: Run update
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
