@@ -97,7 +97,9 @@ def fetch_recent_stock_data():
         timeout=120,
     )
     resp.raise_for_status()
-    raw = resp.json().get("data", [])
+    body = resp.json()
+    print(f"FinMind status: {resp.status_code}, keys: {list(body.keys())}, msg: {body.get('msg', '')}, data len: {len(body.get('data', []))}")
+    raw = body.get("data", [])
     if not raw:
         print("No data from FinMind")
         return pd.DataFrame()
