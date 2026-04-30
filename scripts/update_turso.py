@@ -63,7 +63,6 @@ def make_arg(val):
 # ─── Fetch from FinMind ───────────────────────────────────────────────────────
 
 FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
-FINMIND_HEADERS = {"Authorization": f"Bearer {FINMIND_TOKEN}"}
 
 
 def fetch_recent_stock_data():
@@ -71,13 +70,12 @@ def fetch_recent_stock_data():
     Fetches enough data to cover all missing days + the 60-day rolling window.
     If the last computed date was N days ago, fetches N + 60 + buffer days from FinMind.
 
-    不需要比對新公司清單：直接抓全市場（不指定 stock_id），新上市公司自然包含在內。
-    本地 stock.db 才需要比對，因為要補抓新公司的完整歷史資料。
+    不需要比對新公司清單：不指定 data_id 時會回傳全市場所有股票，
+    新上市公司自然包含在內。本地 stock.db 才需要比對，因為要補抓新公司的完整歷史資料。
     """
     today     = datetime.today()
     today_str = today.strftime("%Y-%m-%d")
 
-    # How far back is our last computed row?
     last_computed = turso_scalar("SELECT MAX(date) FROM high_low_60d")
     if last_computed:
         days_missing = (today - datetime.strptime(last_computed, "%Y-%m-%d")).days
@@ -85,35 +83,21 @@ def fetch_recent_stock_data():
     else:
         days_missing = 0
 
-    # Always fetch at least FETCH_WINDOW (70) days; extend if there are missed days
     fetch_days = max(FETCH_WINDOW, days_missing + DAYS + 10)
     fetch_from = (today - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
 
     print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
     resp = requests.get(
         FINMIND_API_URL,
+        headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
         params={
             "dataset": "TaiwanStockPrice",
-            "data_id": "",
-            "start_date": fetch_from,
-            "end_date": today_str,
-            "token": FINMIND_TOKEN,
+            "start_date": "2026-04-29"
         },
         timeout=120,
     )
-    # 驗證 token 是否有效
-    test_resp = requests.get(
-        FINMIND_API_URL,
-        params={"dataset": "TaiwanStockPrice", "data_id": "0050", "start_date": today_str, "token": FINMIND_TOKEN},
-        timeout=30,
-    )
-    test_body = test_resp.json()
-    print(f"Token test (0050 today): msg={test_body.get('msg')}, rows={len(test_body.get('data', []))}, token_prefix={FINMIND_TOKEN[:10]!r}")
-
     resp.raise_for_status()
-    body = resp.json()
-    print(f"FinMind status: {resp.status_code}, keys: {list(body.keys())}, msg: {body.get('msg', '')}, data len: {len(body.get('data', []))}")
-    raw = body.get("data", [])
+    raw = resp.json().get("data", [])
     if not raw:
         print("No data from FinMind")
         return pd.DataFrame()
