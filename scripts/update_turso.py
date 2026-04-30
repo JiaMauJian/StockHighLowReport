@@ -103,9 +103,8 @@ def fetch_valid_stock_ids():
 
     df = pd.DataFrame(raw)
     df = df[df["stock_id"].apply(lambda x: bool(re.fullmatch(r"[1-9]\d{3}", x)))]
-    df = df[df["date"] == df["date"].max()]
-    df = df.drop_duplicates(subset=["stock_id"])
     df = df[df["type"].isin(["twse", "tpex"])]
+    df = df.sort_values("date").drop_duplicates(subset=["stock_id"], keep="last")
     return set(df["stock_id"].tolist())
 
 
@@ -160,7 +159,7 @@ def fetch_recent_stock_data():
         if raw:
             df_day = pd.DataFrame(raw)[["date", "stock_id", "close"]]
             if valid_stock_ids:
-                df_day = df_day[df_day["stock_id"].isin(valid_stock_ids)]
+                df_day = df_day[df_day["stock_id"].isin(valid_stock_ids) | (df_day["stock_id"] == "TAIEX")]
             frames.append(df_day)
             print(f"  {d}: {len(df_day)} stocks")
         else:
