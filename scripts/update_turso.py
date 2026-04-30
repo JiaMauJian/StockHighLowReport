@@ -104,6 +104,7 @@ def fetch_valid_stock_ids():
     df = pd.DataFrame(raw)
     df = df[df["stock_id"].apply(lambda x: bool(re.fullmatch(r"[1-9]\d{3}", x)))]
     df = df[df["type"].isin(["twse", "tpex"])]
+    df = df[df["industry_category"] != "存託憑證"]
     df = df.sort_values("date").drop_duplicates(subset=["stock_id"], keep="last")
     return set(df["stock_id"].tolist())
 

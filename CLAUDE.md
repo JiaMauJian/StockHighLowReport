@@ -13,5 +13,6 @@ df = df[df["stock_id"].apply(lambda x: bool(re.fullmatch(r"[1-9]\d{3}", x)))]
 df = df[df["date"] == df["date"].max()]
 df = df.drop_duplicates(subset=["stock_id"])
 df = df[df["type"].isin(["twse", "tpex"])]
+df = df[df["industry_category"] != "存託憑證"]  # 排除 DR 股
 df = df.sort_values(by="stock_id")
 ```
