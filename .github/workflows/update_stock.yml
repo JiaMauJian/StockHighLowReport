@@ -21,7 +21,7 @@ jobs:
           cache-dependency-path: requirements_ga.txt
 
       - name: Install dependencies
-        run: pip install -r requirements_ga.txt
+        run: pip install --no-cache-dir -r requirements_ga.txt
 
       - name: Run update
         env:
