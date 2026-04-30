@@ -92,8 +92,12 @@ def fetch_recent_stock_data():
     print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
     resp = requests.get(
         FINMIND_API_URL,
-        headers=FINMIND_HEADERS,
-        params={"dataset": "TaiwanStockPrice", "start_date": fetch_from, "end_date": today_str},
+        params={
+            "dataset": "TaiwanStockPrice",
+            "start_date": fetch_from,
+            "end_date": today_str,
+            "token": FINMIND_TOKEN,
+        },
         timeout=120,
     )
     resp.raise_for_status()
