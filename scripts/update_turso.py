@@ -131,6 +131,11 @@ def fetch_recent_stock_data():
     fetch_from = (today - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
 
     trading_dates = fetch_trading_dates()
+
+    if today_str not in trading_dates:
+        print(f"Today ({today_str}) is not a trading day, skipping.")
+        return pd.DataFrame()
+
     fetch_from = nearest_trading_date(fetch_from, trading_dates)
     print(f"Adjusted fetch_from to nearest trading date: {fetch_from}")
 
@@ -153,8 +158,11 @@ def fetch_recent_stock_data():
         resp.raise_for_status()
         raw = resp.json().get("data", [])
         if raw:
-            frames.append(pd.DataFrame(raw)[["date", "stock_id", "close"]])
-            print(f"  {d}: {len(raw)} stocks")
+            df_day = pd.DataFrame(raw)[["date", "stock_id", "close"]]
+            if valid_stock_ids:
+                df_day = df_day[df_day["stock_id"].isin(valid_stock_ids)]
+            frames.append(df_day)
+            print(f"  {d}: {len(df_day)} stocks")
         else:
             print(f"  {d}: no data")
 
@@ -163,8 +171,6 @@ def fetch_recent_stock_data():
         return pd.DataFrame()
 
     df = pd.concat(frames, ignore_index=True)
-    if valid_stock_ids:
-        df = df[df["stock_id"].isin(valid_stock_ids)]
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df = df.dropna(subset=["close"])
     print(f"Fetched {len(df)} rows ({df['date'].nunique()} trading days, {df['stock_id'].nunique()} stocks)")
@@ -269,5 +275,14 @@ if __name__ == "__main__":
 
     df_result = compute_60d(df_raw)
     print(f"Computed {len(df_result)} date rows")
+
+    last_computed = turso_scalar("SELECT MAX(date) FROM high_low_60d")
+    if last_computed:
+        df_result = df_result[df_result["date"] > pd.Timestamp(last_computed)]
+        print(f"New rows to upsert (after {last_computed}): {len(df_result)}")
+
+    if df_result.empty:
+        print("No new rows to upsert, exiting")
+        exit(0)
 
     upsert_results(df_result)
