@@ -4,6 +4,8 @@ token.txt
 
 # 資料庫
 *.db
+*.db-shm
+*.db-wal
 
 # PyInstaller 輸出
 build/
