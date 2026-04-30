@@ -13,10 +13,9 @@ def fetch_missing_stock_data(token: str, db_path: str = 'stock.db'):
 
     df = api.taiwan_stock_info()
     df = df[df["stock_id"].apply(lambda x: bool(re.fullmatch(r"[1-9]\d{3}", x)))]
-    df = df[df["date"] == df["date"].max()]
-    df = df.drop_duplicates(subset=["stock_id"])
     df = df[df["type"].isin(["twse", "tpex"])]
     df = df[df["industry_category"] != "存託憑證"]
+    df = df.sort_values("date").drop_duplicates(subset=["stock_id"], keep="last")
     df = df.sort_values(by="stock_id")
     stock_ids = df["stock_id"].tolist()
 
