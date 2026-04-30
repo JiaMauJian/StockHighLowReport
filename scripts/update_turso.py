@@ -12,7 +12,6 @@ import os
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from FinMind.data import DataLoader
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -63,10 +62,17 @@ def make_arg(val):
 
 # ─── Fetch from FinMind ───────────────────────────────────────────────────────
 
-def fetch_recent_stock_data(api):
+FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
+FINMIND_HEADERS = {"Authorization": f"Bearer {FINMIND_TOKEN}"}
+
+
+def fetch_recent_stock_data():
     """
     Fetches enough data to cover all missing days + the 60-day rolling window.
     If the last computed date was N days ago, fetches N + 60 + buffer days from FinMind.
+
+    不需要比對新公司清單：直接抓全市場（不指定 stock_id），新上市公司自然包含在內。
+    本地 stock.db 才需要比對，因為要補抓新公司的完整歷史資料。
     """
     today     = datetime.today()
     today_str = today.strftime("%Y-%m-%d")
@@ -83,23 +89,20 @@ def fetch_recent_stock_data(api):
     fetch_days = max(FETCH_WINDOW, days_missing + DAYS + 10)
     fetch_from = (today - timedelta(days=fetch_days)).strftime("%Y-%m-%d")
 
-    # 不需要比對新公司清單：taiwan_stock_daily 不指定 stock_id 時會回傳全市場所有股票，
-    # 新上市公司自然包含在內。本地 stock.db 才需要比對，因為要補抓新公司的完整歷史資料。
     print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
-    df = api.taiwan_stock_daily(start_date=fetch_from, end_date=today_str)
-    print(f"FinMind returned {len(df)} rows, columns: {list(df.columns) if not df.empty else '[]'}")
-    if df.empty:
-        df_test = api.taiwan_stock_daily(stock_id="0050", start_date="2026-04-25", end_date=today_str)
-        print(f"Single stock test (0050): {len(df_test)} rows")
+    resp = requests.get(
+        FINMIND_API_URL,
+        headers=FINMIND_HEADERS,
+        params={"dataset": "TaiwanStockPrice", "start_date": fetch_from, "end_date": today_str},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    raw = resp.json().get("data", [])
+    if not raw:
         print("No data from FinMind")
         return pd.DataFrame()
 
-    # Check OTC availability for today
-    today_rows = df[df["date"] == today_str]
-    if not today_rows.empty and "TPEx" not in today_rows["stock_id"].values:
-        print(f"OTC data not ready for {today_str}; latest available date will be used")
-
-    df = df[["date", "stock_id", "close"]].copy()
+    df = pd.DataFrame(raw)[["date", "stock_id", "close"]].copy()
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df = df.dropna(subset=["close"])
     print(f"Fetched {len(df)} rows ({df['date'].nunique()} trading days, {df['stock_id'].nunique()} stocks)")
@@ -195,12 +198,9 @@ def upsert_results(df):
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    api = DataLoader()
-    api.login_by_token(api_token=FINMIND_TOKEN)
-
     ensure_table()
 
-    df_raw = fetch_recent_stock_data(api)
+    df_raw = fetch_recent_stock_data()
     if df_raw.empty:
         print("Nothing to compute, exiting")
         exit(0)

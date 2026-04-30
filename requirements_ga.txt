@@ -1,5 +1,3 @@
-finmind
 pandas
 requests
-tqdm
 python-dotenv
