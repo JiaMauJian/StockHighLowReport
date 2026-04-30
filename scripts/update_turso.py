@@ -139,24 +139,30 @@ def fetch_recent_stock_data():
     if valid_stock_ids:
         print(f"Valid stock count: {len(valid_stock_ids)}")
 
-    print(f"Fetching FinMind data from {fetch_from} to {today_str} ...")
-    resp = requests.get(
-        FINMIND_API_URL,
-        headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
-        params={
-            "dataset": "TaiwanStockPrice",
-            "start_date": fetch_from,
-            "end_date": today_str,
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    raw = resp.json().get("data", [])
-    if not raw:
+    dates_to_fetch = [d for d in trading_dates if fetch_from <= d <= today_str]
+    print(f"Fetching {len(dates_to_fetch)} trading days from {fetch_from} to {today_str} ...")
+
+    frames = []
+    for d in dates_to_fetch:
+        resp = requests.get(
+            FINMIND_API_URL,
+            headers={"Authorization": f"Bearer {FINMIND_TOKEN}"},
+            params={"dataset": "TaiwanStockPrice", "start_date": d},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("data", [])
+        if raw:
+            frames.append(pd.DataFrame(raw)[["date", "stock_id", "close"]])
+            print(f"  {d}: {len(raw)} stocks")
+        else:
+            print(f"  {d}: no data")
+
+    if not frames:
         print("No data from FinMind")
         return pd.DataFrame()
 
-    df = pd.DataFrame(raw)[["date", "stock_id", "close"]].copy()
+    df = pd.concat(frames, ignore_index=True)
     if valid_stock_ids:
         df = df[df["stock_id"].isin(valid_stock_ids)]
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
