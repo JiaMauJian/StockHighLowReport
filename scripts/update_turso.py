@@ -89,6 +89,8 @@ def fetch_recent_stock_data(api):
     df = api.taiwan_stock_daily(start_date=fetch_from, end_date=today_str)
     print(f"FinMind returned {len(df)} rows, columns: {list(df.columns) if not df.empty else '[]'}")
     if df.empty:
+        df_test = api.taiwan_stock_daily(stock_id="0050", start_date="2026-04-25", end_date=today_str)
+        print(f"Single stock test (0050): {len(df_test)} rows")
         print("No data from FinMind")
         return pd.DataFrame()
 
