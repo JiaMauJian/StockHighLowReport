@@ -94,12 +94,22 @@ def fetch_recent_stock_data():
         FINMIND_API_URL,
         params={
             "dataset": "TaiwanStockPrice",
+            "data_id": "",
             "start_date": fetch_from,
             "end_date": today_str,
             "token": FINMIND_TOKEN,
         },
         timeout=120,
     )
+    # 驗證 token 是否有效
+    test_resp = requests.get(
+        FINMIND_API_URL,
+        params={"dataset": "TaiwanStockPrice", "data_id": "0050", "start_date": today_str, "token": FINMIND_TOKEN},
+        timeout=30,
+    )
+    test_body = test_resp.json()
+    print(f"Token test (0050 today): msg={test_body.get('msg')}, rows={len(test_body.get('data', []))}, token_prefix={FINMIND_TOKEN[:10]!r}")
+
     resp.raise_for_status()
     body = resp.json()
     print(f"FinMind status: {resp.status_code}, keys: {list(body.keys())}, msg: {body.get('msg', '')}, data len: {len(body.get('data', []))}")
