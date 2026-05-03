@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import webbrowser
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
@@ -25,69 +24,56 @@ def _read_token():
     return token
 
 
-def _load_high_low(conn, start_date: str) -> pd.DataFrame:
-    fetch_from = (
-        pd.Timestamp(start_date) - pd.Timedelta(days=DAYS + 10)
-    ).strftime("%Y-%m-%d")
+def _load_from_turso(start_date: str) -> tuple:
+    """從 Turso high_low_60d 讀取已算好的新高新低資料，回傳 (df_hl, df_taiex)。"""
+    turso_url   = os.environ.get("TURSO_DATABASE_URL", "").replace("libsql://", "https://")
+    turso_token = os.environ.get("TURSO_AUTH_TOKEN", "")
+    if not turso_url or not turso_token:
+        raise RuntimeError("❌ 找不到 TURSO_DATABASE_URL 或 TURSO_AUTH_TOKEN，請確認 .env 檔案已設定。")
 
-    df_all = pd.read_sql_query(
-        f"SELECT date, stock_id, close FROM stock_daily"
-        f" WHERE date >= '{fetch_from}'"
-        f" ORDER BY stock_id, date",
-        conn,
-    )
-    df_all["date"] = pd.to_datetime(df_all["date"], errors="coerce")
-    df_all = df_all.dropna(subset=["date"])
+    headers = {
+        "Authorization": f"Bearer {turso_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "requests": [
+            {
+                "type": "execute",
+                "stmt": {
+                    "sql": (
+                        "SELECT date, taiex_close, num_lows, num_highs, "
+                        "num_traded_stocks, low_ratio, high_ratio "
+                        "FROM high_low_60d WHERE date >= ? ORDER BY date"
+                    ),
+                    "args": [{"type": "text", "value": start_date}],
+                },
+            },
+            {"type": "close"},
+        ]
+    }
+    r = requests.post(f"{turso_url}/v2/pipeline", headers=headers, json=payload, timeout=60)
+    r.raise_for_status()
+    result = r.json()["results"][0]["response"]["result"]
 
-    df_total = (
-        df_all.groupby("date")["stock_id"]
-        .nunique()
-        .reset_index(name="num_traded_stocks")
-    )
+    cols = [c["name"] for c in result["cols"]]
+    data = [[cell.get("value") for cell in row] for row in result["rows"]]
+    df = pd.DataFrame(data, columns=cols)
 
-    df_idx = df_all.set_index("date")
-    df_idx["min_close"] = df_idx.groupby("stock_id")["close"].transform(
-        lambda x: x.rolling(f"{DAYS}D", min_periods=1).min()
-    )
-    df_idx["max_close"] = df_idx.groupby("stock_id")["close"].transform(
-        lambda x: x.rolling(f"{DAYS}D", min_periods=1).max()
-    )
-    df_stats = df_idx.reset_index()
+    df["date"]               = pd.to_datetime(df["date"])
+    df["taiex_close"]        = pd.to_numeric(df["taiex_close"])
+    df["num_lows"]           = pd.to_numeric(df["num_lows"]).astype(int)
+    df["num_highs"]          = pd.to_numeric(df["num_highs"]).astype(int)
+    df["num_traded_stocks"]  = pd.to_numeric(df["num_traded_stocks"]).astype(int)
+    df["low_ratio"]          = pd.to_numeric(df["low_ratio"])
+    df["high_ratio"]         = pd.to_numeric(df["high_ratio"])
 
-    df_lows = (
-        df_stats[df_stats["close"] == df_stats["min_close"]]
-        .groupby("date")["stock_id"]
-        .nunique()
-        .reset_index(name="num_lows")
-    )
-    df_highs = (
-        df_stats[df_stats["close"] == df_stats["max_close"]]
-        .groupby("date")["stock_id"]
-        .nunique()
-        .reset_index(name="num_highs")
-    )
+    df_hl    = df[["date", "num_lows", "num_highs", "num_traded_stocks", "low_ratio", "high_ratio"]].copy()
+    df_taiex = (df[["date", "taiex_close"]]
+                .rename(columns={"taiex_close": "close"})
+                .dropna(subset=["close"])
+                .reset_index(drop=True))
 
-    df = (
-        df_total.merge(df_lows, on="date", how="left")
-        .merge(df_highs, on="date", how="left")
-    )
-    df[["num_lows", "num_highs"]] = df[["num_lows", "num_highs"]].fillna(0).astype(int)
-    df["low_ratio"] = (df["num_lows"] * 100.0 / df["num_traded_stocks"]).round(2)
-    df["high_ratio"] = (df["num_highs"] * 100.0 / df["num_traded_stocks"]).round(2)
-
-    df = df[df["date"] >= pd.Timestamp(start_date)].sort_values("date").reset_index(drop=True)
-    return df
-
-
-def _load_taiex(conn, start_date: str) -> pd.DataFrame:
-    df = pd.read_sql_query(
-        f"SELECT date, close FROM stock_daily"
-        f" WHERE stock_id='TAIEX' AND date >= '{start_date}'"
-        f" ORDER BY date",
-        conn,
-    )
-    df["date"] = pd.to_datetime(df["date"])
-    return df
+    return df_hl, df_taiex
 
 
 def _load_margin(api, start_date: str, end_date: str) -> pd.DataFrame:
@@ -172,31 +158,31 @@ def _build_macd_fig(df: pd.DataFrame, title: str) -> go.Figure:
         colors = ["red" if v >= 0 else "green" for v in df[f"hist_{suffix}"]]
         fig.add_trace(
             go.Bar(x=df["date"], y=df[f"hist_{suffix}"],
-                   name=f"OSC {label}", marker_color=colors, opacity=0.5,
-                   showlegend=False, hovertemplate="<extra></extra>"),
+                name=f"OSC {label}", marker_color=colors, opacity=0.5,
+                hovertemplate="OSC : %{y:.2f}<extra></extra>"),
             row=row, col=1,
         )
         fig.add_trace(
             go.Scatter(x=df["date"], y=df[f"macd_{suffix}"],
-                       name=f"DIF {label}", line=dict(color="blue", width=1),
-                       showlegend=False, hovertemplate="<extra></extra>"),
+                    name=f"DIF {label}", line=dict(color="blue", width=1),
+                    hovertemplate="DIF : %{y:.2f}<extra></extra>"),
             row=row, col=1,
         )
         fig.add_trace(
             go.Scatter(x=df["date"], y=df[f"signal_{suffix}"],
-                       name=f"MACD9 {label}", line=dict(color="orange", width=1),
-                       showlegend=False, hovertemplate="<extra></extra>"),
+                    name=f"MACD9 {label}", line=dict(color="orange", width=1),
+                    hovertemplate="MACD9 : %{y:.2f}<extra></extra>"),
             row=row, col=1,
         )
-    default_3yr = (date.today() - relativedelta(years=3)).strftime("%Y-%m")
-    end_ym      = date.today().strftime("%Y-%m")
+    default_3yr = (date.today() - relativedelta(years=3, months=1)).strftime("%Y-%m")
+    end_ym      = (date.today() + relativedelta(months=2)).strftime("%Y-%m")
     fig.update_layout(
         height=1200,
         autosize=True,
         template="plotly_white",
         showlegend=False,
         hoverlabel=dict(font_size=13),
-        hovermode="x",
+        hovermode="x unified",
         xaxis_rangeslider_visible=False,
         xaxis2_rangeslider_visible=False,
         xaxis3_rangeslider_visible=False,
@@ -212,8 +198,182 @@ def _build_macd_fig(df: pd.DataFrame, title: str) -> go.Figure:
         spikecolor="#888",
         spikedash="dot",
     )
-    fig.update_traces(xhoverformat="%Y-%m")
+    #fig.update_traces(xhoverformat="%Y-%m")
     return fig
+
+
+ALL_PLOT_IDS = ["plot-low", "plot-high", "plot-margin", "plot-cnn", "plot-macd-taiex", "plot-macd-tpex"]
+
+
+def _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd) -> str:
+    """產生頂部 summary bar HTML。"""
+
+    def latest2(df, col):
+        """回傳 (最新值, 前一筆值)，可能為 None。"""
+        if df is None or df.empty or col not in df.columns:
+            return None, None
+        s = df.sort_values("date")[col].dropna()
+        curr = float(s.iloc[-1]) if len(s) >= 1 else None
+        prev = float(s.iloc[-2]) if len(s) >= 2 else None
+        return curr, prev
+
+    def delta_tag(curr, prev, fmt, reverse=False):
+        """產生帶顏色箭頭的差值 span。"""
+        if curr is None or prev is None:
+            return ""
+        diff = curr - prev
+        if diff == 0:
+            return '<span class="s-delta neutral">—</span>'
+        arrow  = "↑" if diff > 0 else "↓"
+        good   = diff > 0 if not reverse else diff < 0
+        cls    = "up" if good else "dn"
+        return f'<span class="s-delta {cls}">{arrow} {abs(diff):{fmt}}</span>'
+
+    def card(label, value_str, delta_str=""):
+        return (
+            f'<div class="sc">'
+            f'<div class="sc-label">{label}</div>'
+            f'<div class="sc-value">{value_str}</div>'
+            f'{delta_str}'
+            f'</div>'
+        )
+
+    # ── 取數值 ─────────────────────────────────────────────────
+    latest_date = df_hl["date"].max().strftime("%Y-%m-%d") if not df_hl.empty else "N/A"
+
+    taiex_c, taiex_p   = latest2(df_taiex, "close")
+    low_c,   low_p     = latest2(df_hl,    "low_ratio")
+    high_c,  high_p    = latest2(df_hl,    "high_ratio")
+    margin_c, margin_p = latest2(df_margin, "TotalExchangeMarginMaintenance")
+    cnn_c,   cnn_p     = latest2(df_cnn,   "fear_greed")
+    tosc_c,  tosc_p    = latest2(df_taiex_macd, "hist_c")
+    posc_c,  posc_p    = latest2(df_tpex_macd,  "hist_c")
+
+    # ── 組合卡片 ───────────────────────────────────────────────
+    cards = "".join([
+        card("最新日期",      latest_date),
+        card("TAIEX 收盤",
+             f"{taiex_c:,.0f}" if taiex_c else "N/A",
+             delta_tag(taiex_c, taiex_p, ".0f")),
+        card("60日新低(%)",
+             f"{low_c:.1f}%" if low_c is not None else "N/A",
+             delta_tag(low_c, low_p, ".1f", reverse=True)),
+        card("60日新高(%)",
+             f"{high_c:.1f}%" if high_c is not None else "N/A",
+             delta_tag(high_c, high_p, ".1f")),
+        card("融資維持率",
+             f"{margin_c:.1f}" if margin_c else "N/A",
+             delta_tag(margin_c, margin_p, ".1f")),
+        card("CNN Fear/Greed",
+             f"{cnn_c:.0f}" if cnn_c is not None else "N/A",
+             delta_tag(cnn_c, cnn_p, ".0f")),
+        card("上市 MACD OSC",
+             f"{tosc_c:.2f}" if tosc_c is not None else "N/A",
+             delta_tag(tosc_c, tosc_p, ".2f")),
+        card("上櫃 MACD OSC",
+             f"{posc_c:.2f}" if posc_c is not None else "N/A",
+             delta_tag(posc_c, posc_p, ".2f")),
+    ])
+    return f'<div class="summary-bar">{cards}</div>'
+
+
+def _build_main_chart(title: str, holidays: list, default_start: str, end_date: str, height: int = 400) -> go.Figure:
+    """建立單張主圖（secondary_y）共用版型。"""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.update_layout(
+        title_text=title,
+        height=height,
+        template="plotly_white",
+        hoverlabel=dict(font_size=13),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=50, b=30, l=55, r=55),
+    )
+    fig.update_xaxes(
+        range=[default_start, end_date],
+        rangeslider=dict(visible=False),
+        showticklabels=True,
+        showline=True, linecolor="#444", mirror=True,
+        rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=holidays)],
+        tickformat="%Y-%m-%d",
+        showspikes=True, spikesnap="cursor", spikemode="across",
+        spikethickness=1, spikecolor="#888", spikedash="dot",
+    )
+    fig.update_yaxes(showline=True, linecolor="#444", mirror=True)
+    fig.update_layout(bargap=0)
+    return fig
+
+
+def _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
+                      df_taiex_macd, df_tpex_macd,
+                      holidays, default_start, end_date):
+    """建立六張圖，回傳 list[go.Figure]，順序對應 ALL_PLOT_IDS。"""
+
+    # ── 圖1：60日新低 ─────────────────────────────────────────
+    fig_low = _build_main_chart(f"股價創{DAYS}日新低比例", holidays, default_start, end_date)
+    fig_low.add_trace(
+        go.Bar(x=df_hl["date"], y=df_hl["low_ratio"],
+               name=f"{DAYS}日新低(%)", marker_color="red", opacity=0.8),
+    )
+    fig_low.add_trace(
+        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
+                   name="TAIEX", line=dict(color="black"), mode="lines", showlegend=False),
+        secondary_y=True,
+    )
+    fig_low.update_yaxes(title_text="比例 (%)", range=[0, 100], secondary_y=False)
+    fig_low.update_yaxes(title_text="TAIEX", secondary_y=True)
+    fig_low.update_traces(xhoverformat="%Y-%m-%d")
+
+    # ── 圖2：60日新高 ─────────────────────────────────────────
+    fig_high = _build_main_chart(f"股價創{DAYS}日新高比例", holidays, default_start, end_date)
+    fig_high.add_trace(
+        go.Bar(x=df_hl["date"], y=df_hl["high_ratio"],
+               name=f"{DAYS}日新高(%)", marker_color="green", opacity=0.8),
+    )
+    fig_high.add_trace(
+        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
+                   name="TAIEX", line=dict(color="black"), mode="lines", showlegend=False),
+        secondary_y=True,
+    )
+    fig_high.update_yaxes(title_text="比例 (%)", range=[0, 100], secondary_y=False)
+    fig_high.update_yaxes(title_text="TAIEX", secondary_y=True)
+    fig_high.update_traces(xhoverformat="%Y-%m-%d")
+
+    # ── 圖3：融資維持率 ───────────────────────────────────────
+    fig_margin = _build_main_chart("TAIEX vs 融資維持率", holidays, default_start, end_date)
+    fig_margin.add_trace(
+        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
+                   name="TAIEX", line=dict(color="black"), mode="lines"),
+    )
+    fig_margin.add_trace(
+        go.Scatter(x=df_margin["date"], y=df_margin["TotalExchangeMarginMaintenance"],
+                   name="融資維持率", line=dict(color="red"), mode="lines"),
+        secondary_y=True,
+    )
+    fig_margin.update_yaxes(title_text="TAIEX", secondary_y=False)
+    fig_margin.update_yaxes(title_text="融資維持率", secondary_y=True)
+    fig_margin.update_traces(xhoverformat="%Y-%m-%d")
+
+    # ── 圖4：CNN Fear/Greed ───────────────────────────────────
+    fig_cnn = _build_main_chart("TAIEX vs CNN Fear/Greed", holidays, default_start, end_date)
+    fig_cnn.add_trace(
+        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
+                   name="TAIEX", line=dict(color="black"), mode="lines"),
+    )
+    fig_cnn.add_trace(
+        go.Scatter(x=df_cnn["date"], y=df_cnn["fear_greed"],
+                   name="CNN Fear/Greed", line=dict(color="orange"), mode="lines"),
+        secondary_y=True,
+    )
+    fig_cnn.update_yaxes(title_text="TAIEX", secondary_y=False)
+    fig_cnn.update_yaxes(title_text="Fear/Greed", range=[0, 100], secondary_y=True)
+    fig_cnn.update_traces(xhoverformat="%Y-%m-%d")
+
+    # ── 圖5、6：月MACD ────────────────────────────────────────
+    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市")
+    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃")
+
+    return [fig_low, fig_high, fig_margin, fig_cnn, fig_taiex_macd, fig_tpex_macd]
 
 
 def run_dashboard():
@@ -222,16 +382,11 @@ def run_dashboard():
     today = date.today()
     end_date = today.strftime("%Y-%m-%d")
     start_date = (today - relativedelta(years=MAX_YEARS)).strftime("%Y-%m-%d")
+    default_start = (today - relativedelta(years=3)).strftime("%Y-%m-%d")
 
-    print("讀取 stock.db 資料...")
-    conn = sqlite3.connect("stock.db")
-    conn.execute("PRAGMA journal_mode=WAL;")
-    try:
-        df_hl = _load_high_low(conn, start_date)
-        df_taiex = _load_taiex(conn, start_date)
-    finally:
-        conn.close()
-    print("stock.db 資料讀取完成")
+    print("從 Turso 讀取新高新低資料...")
+    df_hl, df_taiex = _load_from_turso(start_date)
+    print(f"Turso 資料讀取完成：{len(df_hl)} 筆，最新日期 {df_hl['date'].max().date()}")
 
     print("抓取融資維持率資料...")
     api = DataLoader()
@@ -254,119 +409,28 @@ def run_dashboard():
     df_cnn    = df_cnn[df_cnn["date"].isin(taiex_dates)].reset_index(drop=True)
 
     # 從 TAIEX 交易日推算出需要跳過的非交易日（假日）
-    all_days = pd.date_range(start=df_taiex["date"].min(),
-                             end=df_taiex["date"].max(), freq="D")
-    trading_days = set(df_taiex["date"])
-    holidays = [d.strftime("%Y-%m-%d") for d in all_days if d not in trading_days]
+    all_days = pd.date_range(start=df_taiex["date"].min(), end=df_taiex["date"].max(), freq="D")
+    holidays = [d.strftime("%Y-%m-%d") for d in all_days if d not in set(df_taiex["date"])]
 
-    # 預設顯示最近 3 年
-    default_start = (today - relativedelta(years=3)).strftime("%Y-%m-%d")
-
-    # ── 建立圖表 ──────────────────────────────────────────────
-    fig = make_subplots(
-        rows=4, cols=1,
-        shared_xaxes=True,
-        subplot_titles=[
-            "TAIEX vs 融資維持率",
-            f"股價創{DAYS}日新低比例",
-            f"股價創{DAYS}日新高比例",
-            "TAIEX vs CNN Fear/Greed",
-        ],
-        specs=[
-            [{"secondary_y": True}],
-            [{"secondary_y": True}],
-            [{"secondary_y": True}],
-            [{"secondary_y": True}],
-        ],
-        vertical_spacing=0.06,
-    )
-
-    # 圖1：TAIEX + 融資維持率
-    fig.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black")),
-        row=1, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df_margin["date"], y=df_margin["TotalExchangeMarginMaintenance"],
-                   name="融資維持率", line=dict(color="red")),
-        row=1, col=1, secondary_y=True,
-    )
-
-    # 圖2：新低比例（紅柱）+ TAIEX 收盤（黑線）
-    fig.add_trace(
-        go.Bar(x=df_hl["date"], y=df_hl["low_ratio"],
-               name=f"股價低於{DAYS}日比例(%)", marker_color="red", opacity=0.8),
-        row=2, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="收盤價", line=dict(color="black"), showlegend=False),
-        row=2, col=1, secondary_y=True,
-    )
-
-    # 圖3：新高比例（綠柱）+ TAIEX 收盤（黑線）
-    fig.add_trace(
-        go.Bar(x=df_hl["date"], y=df_hl["high_ratio"],
-               name=f"股價高於{DAYS}日比例(%)", marker_color="green", opacity=0.8),
-        row=3, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="收盤價", line=dict(color="black"), showlegend=False),
-        row=3, col=1, secondary_y=True,
-    )
-
-    # 圖4：TAIEX + CNN Fear/Greed
-    fig.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black"), showlegend=False),
-        row=4, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df_cnn["date"], y=df_cnn["fear_greed"],
-                   name="CNN Fear/Greed", line=dict(color="orange")),
-        row=4, col=1, secondary_y=True,
-    )
-
-    fig.update_yaxes(title_text="TAIEX", row=1, col=1, secondary_y=False)
-    fig.update_yaxes(title_text="融資維持率", row=1, col=1, secondary_y=True)
-    fig.update_yaxes(title_text="比例 (%)", row=2, col=1, secondary_y=False, range=[0, 100])
-    fig.update_yaxes(title_text="TAIEX", row=2, col=1, secondary_y=True)
-    fig.update_yaxes(title_text="比例 (%)", row=3, col=1, secondary_y=False, range=[0, 100])
-    fig.update_yaxes(title_text="TAIEX", row=3, col=1, secondary_y=True)
-    fig.update_yaxes(title_text="TAIEX", row=4, col=1, secondary_y=False)
-    fig.update_yaxes(title_text="Fear/Greed", row=4, col=1, secondary_y=True, range=[0, 100])
-
-    fig.update_xaxes(rangeslider=dict(visible=False), showticklabels=True,
-                     showline=True, linecolor="#444", mirror=True,
-                     rangebreaks=[dict(values=holidays)],
-                     tickformat="%Y-%m-%d")
-    fig.update_yaxes(showline=True, linecolor="#444", mirror=True)
-
-    # 預設顯示最近 3 年
-    fig.update_xaxes(range=[default_start, end_date])
-
-    fig.update_layout(
-        height=1800,
-        template="plotly_white",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        hoverlabel=dict(font_size=13),
-        hovermode="x unified",
-    )
-    fig.update_traces(xhoverformat="%Y-%m-%d")
-
-    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市")
-    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃")
-
-    chart_div      = fig.to_html(full_html=False, include_plotlyjs="cdn", div_id="dashboard")
-    macd_taiex_div = fig_taiex_macd.to_html(full_html=False, include_plotlyjs=False, div_id="macd_taiex")
-    macd_tpex_div  = fig_tpex_macd.to_html(full_html=False, include_plotlyjs=False, div_id="macd_tpex")
-
-    _write_html(chart_div, macd_taiex_div, macd_tpex_div, end_date)
+    figs = _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
+                              df_taiex_macd, df_tpex_macd,
+                              holidays, default_start, end_date)
+    summary = _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd)
+    _write_html(figs, end_date, summary)
 
 
-def _write_html(chart_div: str, macd_taiex_div: str, macd_tpex_div: str, end_date: str):
+def _write_html(figs: list, end_date: str, summary_html: str = ""):
+    # 第一張圖帶入 plotlyjs CDN，其餘不重複載入
+    divs = []
+    for i, (fig, pid) in enumerate(zip(figs, ALL_PLOT_IDS)):
+        divs.append(fig.to_html(
+            full_html=False,
+            include_plotlyjs="cdn" if i == 0 else False,
+            div_id=pid,
+        ))
+
+    d0, d1, d2, d3, d4, d5 = divs
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -375,32 +439,8 @@ def _write_html(chart_div: str, macd_taiex_div: str, macd_tpex_div: str, end_dat
   <style>
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #fff; font-family: sans-serif; }}
-    .container {{ max-width: 1400px; margin: 0 auto; padding: 0 20px 20px; }}
-    .tabs {{
-      display: flex;
-      border-bottom: 2px solid #d0d7e3;
-      margin-bottom: 16px;
-      padding-top: 16px;
-    }}
-    .tab-btn {{
-      padding: 10px 28px;
-      font-size: 15px;
-      font-weight: 500;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      color: #555;
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-      transition: all 0.15s;
-    }}
-    .tab-btn:hover {{ color: #2979c8; }}
-    .tab-btn.active {{
-      color: #2979c8;
-      border-bottom-color: #2979c8;
-    }}
-    .tab-panel {{ display: none; }}
-    .tab-panel.active {{ display: block; }}
+    .container {{ max-width: 1600px; margin: 0 auto; padding: 16px 20px 40px; }}
+    h1 {{ font-size: 18px; margin: 0 0 12px; color: #333; }}
     .btn-group {{
       display: flex;
       gap: 8px;
@@ -422,172 +462,166 @@ def _write_html(chart_div: str, macd_taiex_div: str, macd_tpex_div: str, end_dat
       background: #2979c8;
       color: #fff;
     }}
-    .macd-wrapper {{ position: relative; }}
-    .macd-info-ov {{
-      position: absolute;
-      z-index: 10;
+    .summary-bar {{
       display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 18px;
-      font-family: monospace;
-      background: rgba(255,255,255,0.88);
-      padding: 2px 8px;
-      pointer-events: none;
+      flex-wrap: wrap;
+      gap: 0;
+      background: #f8f9fb;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 8px;
+      margin-bottom: 14px;
+    }}
+    .sc {{
+      flex: 1;
+      min-width: 110px;
+      padding: 4px 16px;
+      border-right: 1px solid #dde3ed;
+    }}
+    .sc:last-child {{ border-right: none; }}
+    .sc-label {{
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 2px;
       white-space: nowrap;
     }}
-    .mi-label {{ color: #555; font-weight: 600; margin-right: 4px; }}
-    .mi-m9    {{ color: #e2843a; font-weight: bold; }}
-    .mi-dif   {{ color: #2255cc; font-weight: bold; }}
-    .mi-osc   {{ font-weight: bold; }}
+    .sc-value {{
+      font-size: 26px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.2;
+    }}
+    .s-delta {{
+      font-size: 13px;
+      margin-top: 2px;
+      display: block;
+    }}
+    .s-delta.up  {{ color: #16a34a; }}
+    .s-delta.dn  {{ color: #dc2626; }}
+    .s-delta.neutral {{ color: #888; }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0px 12px;
+    }}
+    .grid.one-col {{
+      grid-template-columns: 1fr;
+    }}
+    .col-btn {{
+      padding: 8px 14px;
+      font-size: 15px;
+      border: 2px solid #888;
+      border-radius: 20px;
+      background: #fff;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-weight: 500;
+    }}
+    .col-btn:hover {{ background: #f0f0f0; }}
+    .col-btn.active {{
+      background: #555;
+      color: #fff;
+      border-color: #555;
+    }}
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="tabs">
-      <button class="tab-btn active" onclick="showTab('main', this)">大盤指標</button>
-      <button class="tab-btn"        onclick="showTab('macd_taiex_tab', this)">TAIEX 月MACD</button>
-      <button class="tab-btn"        onclick="showTab('macd_tpex_tab', this)">TPEx 月MACD</button>
-    </div>
-
-    <div id="main" class="tab-panel active">
-      <div class="btn-group">
-        <button onclick="setRange(1,  'dashboard', this)">1 年</button>
-        <button onclick="setRange(3,  'dashboard', this)" class="active">3 年</button>
-        <button onclick="setRange(5,  'dashboard', this)">5 年</button>
-        <button onclick="setRange(10, 'dashboard', this)">10 年</button>
+    {summary_html}
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+      <div class="btn-group" style="margin-bottom:0">
+        <button onclick="setRange(0.5, this)">半年</button>
+        <button onclick="setRange(1,   this)">1 年</button>
+        <button onclick="setRange(3,   this)" class="active">3 年</button>
+        <button onclick="setRange(5,   this)">5 年</button>
+        <button onclick="setRange(10,  this)">10 年</button>
+        <button onclick="setAll(this)">全部</button>
       </div>
-      {chart_div}
-    </div>
-
-    <div id="macd_taiex_tab" class="tab-panel">
-      <div class="btn-group">
-        <button onclick="setRange(1,  'macd_taiex', this)">1 年</button>
-        <button onclick="setRange(3,  'macd_taiex', this)" class="active">3 年</button>
-        <button onclick="setRange(5,  'macd_taiex', this)">5 年</button>
-        <button onclick="setRange(10, 'macd_taiex', this)">10 年</button>
-      </div>
-      <div class="macd-wrapper">
-        {macd_taiex_div}
-        <div id="taiex_iw" class="macd-info-ov">
-          <span class="mi-label">MACD (H+L+2C)/4</span>
-          <span class="mi-m9"  id="taiex_iw_m9">MACD9 --</span>
-          <span class="mi-dif" id="taiex_iw_dif">DIF --</span>
-          <span class="mi-osc" id="taiex_iw_osc">OSC --</span>
-        </div>
-        <div id="taiex_ic" class="macd-info-ov">
-          <span class="mi-label">MACD close</span>
-          <span class="mi-m9"  id="taiex_ic_m9">MACD9 --</span>
-          <span class="mi-dif" id="taiex_ic_dif">DIF --</span>
-          <span class="mi-osc" id="taiex_ic_osc">OSC --</span>
-        </div>
+      <div style="display:flex; gap:6px;">
+        <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
+        <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
       </div>
     </div>
 
-    <div id="macd_tpex_tab" class="tab-panel">
-      <div class="btn-group">
-        <button onclick="setRange(1,  'macd_tpex', this)">1 年</button>
-        <button onclick="setRange(3,  'macd_tpex', this)" class="active">3 年</button>
-        <button onclick="setRange(5,  'macd_tpex', this)">5 年</button>
-        <button onclick="setRange(10, 'macd_tpex', this)">10 年</button>
-      </div>
-      <div class="macd-wrapper">
-        {macd_tpex_div}
-        <div id="tpex_iw" class="macd-info-ov">
-          <span class="mi-label">MACD (H+L+2C)/4</span>
-          <span class="mi-m9"  id="tpex_iw_m9">MACD9 --</span>
-          <span class="mi-dif" id="tpex_iw_dif">DIF --</span>
-          <span class="mi-osc" id="tpex_iw_osc">OSC --</span>
-        </div>
-        <div id="tpex_ic" class="macd-info-ov">
-          <span class="mi-label">MACD close</span>
-          <span class="mi-m9"  id="tpex_ic_m9">MACD9 --</span>
-          <span class="mi-dif" id="tpex_ic_dif">DIF --</span>
-          <span class="mi-osc" id="tpex_ic_osc">OSC --</span>
-        </div>
-      </div>
+    <div class="grid" id="main-grid">
+      <div>{d0}</div>
+      <div>{d1}</div>
+      <div>{d2}</div>
+      <div>{d3}</div>
+      <div>{d4}</div>
+      <div>{d5}</div>
     </div>
   </div>
 
   <script>
-    function showTab(id, btn) {{
-      document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-      document.getElementById(id).classList.add('active');
-      btn.classList.add('active');
-      document.getElementById(id).querySelectorAll('.plotly-graph-div').forEach(el => Plotly.Plots.resize(el));
+    const ALL_PLOTS  = {str(ALL_PLOT_IDS).replace("'", '"')};
+    const MAIN_PLOTS = ["plot-low", "plot-high", "plot-margin", "plot-cnn"];
+    const MACD_PLOTS = ["plot-macd-taiex", "plot-macd-tpex"];
+
+    function resetAxes(id) {{
+      const el = document.getElementById(id);
+      const btn = el.querySelector('.modebar-btn[data-title="Reset axes"]');
+      if (btn) btn.click();
+      return el;
     }}
 
-    function setRange(years, plotId, btn) {{
+    function setRange(years, btn) {{
       btn.closest('.btn-group').querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const plot = document.getElementById(plotId);
       const end = new Date('{end_date}');
       end.setDate(end.getDate() + 1);
       const start = new Date(end);
-      start.setFullYear(start.getFullYear() - years);
+      const months = Math.round(years * 12);
+      start.setMonth(start.getMonth() - months);
       const fmt = d => d.toISOString().split('T')[0];
-      Plotly.relayout(plot, {{'xaxis.range': [fmt(start), fmt(end)]}});
+
+      // 主圖：reset 後設指定年份 X 範圍
+      MAIN_PLOTS.forEach(id => {{
+        const el = resetAxes(id);
+        Plotly.relayout(el, {{
+          'xaxis.autorange': false,
+          'xaxis.range': [fmt(start), fmt(end)]
+        }});
+      }});
+
+      // MACD（月線）：只 reset，不覆寫 x 範圍（避免日期格式不符切到 K 棒）
+      MACD_PLOTS.forEach(id => resetAxes(id));
     }}
 
-    function fmtM(v) {{
-      if (v == null) return '--';
-      return v.toFixed(2) + (v >= 0 ? '↑' : '↓');
+    function setAll(btn) {{
+      btn.closest('.btn-group').querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // 主圖：只 autorange X 軸，Y 軸維持原本固定範圍（如 0~100）
+      MAIN_PLOTS.forEach(id => {{
+        const el = document.getElementById(id);
+        Plotly.relayout(el, {{'xaxis.autorange': true}});
+      }});
+      // MACD 月線圖：X、Y 軸都 autorange
+      MACD_PLOTS.forEach(id => {{
+        const el = document.getElementById(id);
+        Plotly.relayout(el, {{'xaxis.autorange': true, 'yaxis.autorange': true,
+                               'yaxis2.autorange': true, 'yaxis3.autorange': true}});
+      }});
     }}
 
-    function setOsc(id, v) {{
-      const e = document.getElementById(id);
-      if (!e) return;
-      e.textContent = 'OSC ' + fmtM(v);
-      e.style.color = (v != null && v >= 0) ? '#cc0000' : '#009900';
+    function setCols(n, btn) {{
+      btn.closest('div').querySelectorAll('.col-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const grid = document.getElementById('main-grid');
+      if (n === 1) {{
+        grid.classList.add('one-col');
+      }} else {{
+        grid.classList.remove('one-col');
+      }}
+      ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
     }}
-
-    function updateMacdInfo(pfx, pts) {{
-      const get = n => {{ const p = pts.find(p => p.data && p.data.name && p.data.name.startsWith(n)); return p ? p.y : null; }};
-      const set = (id, t) => {{ const e = document.getElementById(id); if (e) e.textContent = t; }};
-      set(pfx+'_iw_m9',  'MACD9 ' + fmtM(get('MACD9 (')));
-      set(pfx+'_iw_dif', 'DIF '   + fmtM(get('DIF (')));
-      setOsc(pfx+'_iw_osc', get('OSC ('));
-      set(pfx+'_ic_m9',  'MACD9 ' + fmtM(get('MACD9 c')));
-      set(pfx+'_ic_dif', 'DIF '   + fmtM(get('DIF c')));
-      setOsc(pfx+'_ic_osc', get('OSC c'));
-    }}
-
-    function positionMacdInfo(plotId, pfx) {{
-      const plot = document.getElementById(plotId);
-      if (!plot._fullLayout || !plot._fullLayout.yaxis2) return;
-      const l  = plot._fullLayout;
-      const pH = l.height - l.margin.t - l.margin.b;
-      const y2px = l.margin.t + pH * (1 - l.yaxis2.domain[1]);
-      const y3px = l.margin.t + pH * (1 - l.yaxis3.domain[1]);
-      const iw = document.getElementById(pfx+'_iw');
-      const ic = document.getElementById(pfx+'_ic');
-      if (iw) {{ iw.style.top = (y2px+4)+'px'; iw.style.left = (l.margin.l+4)+'px'; }}
-      if (ic) {{ ic.style.top = (y3px+4)+'px'; ic.style.left = (l.margin.l+4)+'px'; }}
-    }}
-
-    function initMacdInfo(plotId, pfx) {{
-      const plot = document.getElementById(plotId);
-      if (!plot || !plot.data) return;
-      const last = plot.data.map(t => ({{ data: t, y: t.y && t.y.length ? t.y[t.y.length-1] : null }})).filter(p => p.y != null);
-      updateMacdInfo(pfx, last);
-      positionMacdInfo(plotId, pfx);
-      plot.on('plotly_hover',    ev => updateMacdInfo(pfx, ev.points));
-      plot.on('plotly_unhover',  ()  => updateMacdInfo(pfx, last));
-      plot.on('plotly_relayout', ()  => positionMacdInfo(plotId, pfx));
-    }}
-
-    document.addEventListener('DOMContentLoaded', function() {{
-      initMacdInfo('macd_taiex', 'taiex');
-      initMacdInfo('macd_tpex',  'tpex');
-    }});
   </script>
 </body>
 </html>"""
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Dashboard 已產生：{os.path.abspath(OUTPUT_FILE)}")
-
     webbrowser.open(f"file:///{os.path.abspath(OUTPUT_FILE)}")
 
 
@@ -595,7 +629,6 @@ def _mock_macd_data(n_months: int = 120) -> pd.DataFrame:
     import numpy as np
     rng = np.random.default_rng(42)
     months = pd.date_range("2016-01", periods=n_months, freq="MS")
-    # GBM: 月報酬率 N(0, 5%)，產生有漲有跌的走勢讓 MACD 自然震盪
     monthly_ret = rng.normal(0.0, 0.05, n_months)
     price = 300 * np.cumprod(1 + monthly_ret)
     hi  = price * (1 + rng.uniform(0.01, 0.04, n_months))
@@ -615,31 +648,59 @@ def _mock_macd_data(n_months: int = 120) -> pd.DataFrame:
     return df
 
 
-def run_dashboard_test():
-    today     = date.today()
-    end_date  = today.strftime("%Y-%m-%d")
+def _mock_main_data(n_days: int = 365 * 10) -> tuple:
+    import numpy as np
+    rng = np.random.default_rng(0)
+    dates = pd.bdate_range(end=date.today(), periods=n_days)
 
+    # TAIEX：從 15000 走 GBM
+    ret = rng.normal(0.0003, 0.01, n_days)
+    taiex = 15000 * np.cumprod(1 + ret)
+    df_taiex = pd.DataFrame({"date": dates, "close": taiex.round(2)})
+
+    # 新高新低比例：隨機 0~100%，與 TAIEX 方向略相關
+    trend = pd.Series(ret).rolling(20).mean().fillna(0).values
+    low_ratio  = np.clip(20 - trend * 500 + rng.normal(0, 8, n_days), 0, 100).round(2)
+    high_ratio = np.clip(20 + trend * 500 + rng.normal(0, 8, n_days), 0, 100).round(2)
+    df_hl = pd.DataFrame({
+        "date":               dates,
+        "low_ratio":          low_ratio,
+        "high_ratio":         high_ratio,
+        "num_lows":           (low_ratio * 19).astype(int),
+        "num_highs":          (high_ratio * 19).astype(int),
+        "num_traded_stocks":  [1900] * n_days,
+    })
+
+    # 融資維持率：130~180 之間波動
+    margin = 155 + rng.normal(0, 8, n_days)
+    df_margin = pd.DataFrame({
+        "date": dates,
+        "TotalExchangeMarginMaintenance": margin.round(1),
+    })
+
+    # CNN Fear/Greed：0~100
+    fg = np.clip(50 + trend * 2000 + rng.normal(0, 12, n_days), 0, 100)
+    df_cnn = pd.DataFrame({"date": dates, "fear_greed": fg.round(1)})
+
+    return df_hl, df_taiex, df_margin, df_cnn
+
+
+def run_dashboard_test():
+    today         = date.today()
+    end_date      = today.strftime("%Y-%m-%d")
+    default_start = (today - relativedelta(years=3)).strftime("%Y-%m-%d")
+
+    df_hl, df_taiex, df_margin, df_cnn = _mock_main_data()
     df_taiex_macd = _mock_macd_data()
     df_tpex_macd  = _mock_macd_data()
 
-    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市")
-    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃")
-
-    placeholder = (
-        '<div id="dashboard" style="height:300px;display:flex;align-items:center;'
-        'justify-content:center;color:#aaa;font-size:18px;border:2px dashed #ccc;">'
-        '（測試模式：大盤指標略過）</div>'
-    )
-    # include_plotlyjs="cdn" goes into the placeholder so the MACD divs can reuse Plotly
-    chart_div = (
-        '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-        + placeholder
-    )
-    macd_taiex_div = fig_taiex_macd.to_html(full_html=False, include_plotlyjs=False, div_id="macd_taiex")
-    macd_tpex_div  = fig_tpex_macd.to_html(full_html=False, include_plotlyjs=False, div_id="macd_tpex")
-
-    _write_html(chart_div, macd_taiex_div, macd_tpex_div, end_date)
+    figs = _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
+                              df_taiex_macd, df_tpex_macd,
+                              holidays=[], default_start=default_start, end_date=end_date)
+    summary = _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd)
+    _write_html(figs, end_date, summary)
 
 
 if __name__ == "__main__":
-    run_dashboard_test()
+    #run_dashboard_test()
+    run_dashboard()
