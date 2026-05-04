@@ -393,6 +393,36 @@ def main():
 
     print(f"✅ 報告已儲存至 {out_path}")
 
+    # ── 輸出 market_temp_latest.json（供 dashboard 使用）──
+    import json
+    json_data = {
+        "generated_at": date.today().strftime("%Y-%m-%d"),
+        "latest_date": latest_date,
+        "taiex": taiex_now,
+        "avg_sentiment": round(avg, 1),
+        "stats": [
+            {
+                "name":          s["name"],
+                "current":       round(s["current"], 2),
+                "percentile":    round(s["percentile"], 1),
+                "sentiment_pct": round(s["sentiment_pct"], 1),
+                "min":    round(s["min"], 2),
+                "p10":    round(s["p10"], 2),
+                "p25":    round(s["p25"], 2),
+                "median": round(s["median"], 2),
+                "p75":    round(s["p75"], 2),
+                "p90":    round(s["p90"], 2),
+                "max":    round(s["max"], 2),
+                "n":      s["n"],
+            }
+            for s in stats
+        ],
+    }
+    json_path = "market_temp_latest.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(json_data, f, ensure_ascii=False, indent=2)
+    print(f"✅ 市場溫度資料已儲存至 {json_path}")
+
 
 if __name__ == "__main__":
     main()
