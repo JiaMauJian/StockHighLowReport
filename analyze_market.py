@@ -308,7 +308,9 @@ def main():
     _print_summary(stats)
 
     # ── 匯出 20 年原始資料到 Excel ──
-    xlsx_path = f"market_data_{date.today().strftime('%Y%m%d')}.xlsx"
+    reports_dir = os.path.join(os.path.dirname(__file__), "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    xlsx_path = os.path.join(reports_dir, f"market_data_{date.today().strftime('%Y%m%d')}.xlsx")
     print(f"\n💾 匯出資料至 {xlsx_path} ...")
 
     # 整理 MACD（只保留有意義的欄位）
@@ -357,7 +359,7 @@ def main():
     avg = sum(s["sentiment_pct"] for s in stats) / len(stats)
 
     # ── 存檔（固定輸出資料摘要） ──
-    out_path = f"market_analysis_{date.today().strftime('%Y%m%d')}.txt"
+    out_path = os.path.join(reports_dir, f"market_analysis_{date.today().strftime('%Y%m%d')}.txt")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(f"台股市場溫度分析報告  {date.today()}\n")
         f.write("=" * 65 + "\n\n")

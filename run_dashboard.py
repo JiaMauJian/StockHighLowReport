@@ -545,8 +545,6 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
         ))
 
     d0, d1, d2, d3, d4, d5 = divs
-    market_temp_html = _load_market_temp_html()
-    events_html      = _load_events_html()
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -649,12 +647,12 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
 
     <!-- 市場溫度 tab -->
     <div id="tab-market-temp" class="tab-content">
-      {market_temp_html}
+      <div id="market-temp-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
     </div>
 
     <!-- 歷史事件 tab -->
     <div id="tab-events" class="tab-content">
-      {events_html}
+      <div id="events-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
     </div>
   </div>
 
@@ -670,8 +668,122 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       btn.classList.add('active');
       if (name === 'charts') {{
         ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
+      }} else if (name === 'market-temp') {{
+        loadMarketTemp();
+      }} else if (name === 'events') {{
+        loadEvents();
       }}
     }}
+
+    // ── 市場溫度：fetch JSON → 渲染 ──────────────────────────
+    async function loadMarketTemp() {{
+      const el = document.getElementById('market-temp-content');
+      if (el.dataset.loaded) return;
+      try {{
+        const resp = await fetch('market_temp_latest.json');
+        if (!resp.ok) throw new Error('not found');
+        const d = await resp.json();
+        el.innerHTML = buildMarketTempHTML(d);
+        el.dataset.loaded = '1';
+      }} catch(e) {{
+        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:48px; margin-bottom:16px;">🌡️</div>
+          <div style="font-size:18px; font-weight:600; margin-bottom:8px;">尚無市場溫度資料</div>
+          <div style="font-size:14px;">請在本機執行 <code>python analyze_market.py</code> 後 push 至 GitHub</div>
+        </div>`;
+      }}
+    }}
+
+    function buildMarketTempHTML(d) {{
+      const avg = d.avg_sentiment;
+      let label, color;
+      if      (avg >= 75) {{ label='過熱（貪婪）'; color='#dc2626'; }}
+      else if (avg >= 55) {{ label='偏熱';         color='#f97316'; }}
+      else if (avg >= 45) {{ label='中性';         color='#16a34a'; }}
+      else if (avg >= 25) {{ label='偏冷';         color='#2563eb'; }}
+      else                {{ label='過冷（恐懼）'; color='#7c3aed'; }}
+
+      const rows = d.stats.map(s => {{
+        const bc = s.sentiment_pct >= 60 ? '#dc2626' : (s.sentiment_pct <= 40 ? '#2563eb' : '#f97316');
+        return `<tr>
+          <td style="padding:8px;">${{s.name}}</td>
+          <td style="text-align:right; font-weight:600; padding:8px;">${{s.current.toLocaleString(undefined,{{minimumFractionDigits:2,maximumFractionDigits:2}})}}</td>
+          <td style="text-align:right; padding:8px;">${{s.percentile.toFixed(1)}}%</td>
+          <td style="min-width:160px; padding:4px 8px;">
+            <div style="background:#eee; border-radius:4px; height:14px;">
+              <div style="width:${{s.sentiment_pct}}%; background:${{bc}}; height:100%; border-radius:4px;"></div>
+            </div>
+            <div style="font-size:11px; color:#666; text-align:right;">${{s.sentiment_pct.toFixed(1)}}</div>
+          </td>
+          <td style="text-align:right; color:#888; font-size:13px; padding:8px;">${{s.p10.toFixed(2)}}</td>
+          <td style="text-align:right; color:#888; font-size:13px; padding:8px;">${{s.median.toFixed(2)}}</td>
+          <td style="text-align:right; color:#888; font-size:13px; padding:8px;">${{s.p90.toFixed(2)}}</td>
+          <td style="text-align:right; color:#aaa; font-size:12px; padding:8px;">${{s.n.toLocaleString()}}</td>
+        </tr>`;
+      }}).join('');
+
+      return `<div style="max-width:960px; margin:0 auto;">
+        <div style="display:flex; align-items:center; gap:24px; margin-bottom:24px; padding:20px 24px;
+                    background:#f8f9fb; border-radius:12px; border:1px solid #e2e8f0;">
+          <div>
+            <div style="font-size:13px; color:#888; margin-bottom:4px;">整體市場溫度</div>
+            <div style="font-size:36px; font-weight:800; color:${{color}};">${{label}}</div>
+          </div>
+          <div style="flex:1;">
+            <div style="background:#eee; border-radius:8px; height:20px;">
+              <div style="width:${{avg}}%; background:${{color}}; height:100%; border-radius:8px;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:#888; margin-top:4px;">
+              <span>0 極度恐懼</span>
+              <span style="font-weight:700; color:${{color}};">${{avg.toFixed(1)}} / 100</span>
+              <span>100 極度貪婪</span>
+            </div>
+          </div>
+          <div style="text-align:right; font-size:13px; color:#aaa; white-space:nowrap;">
+            TAIEX ${{d.taiex.toLocaleString(undefined,{{maximumFractionDigits:0}})}}<br>
+            資料日期 ${{d.latest_date}}<br>
+            更新 ${{d.generated_at}}
+          </div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <thead>
+            <tr style="background:#f1f5f9; color:#555;">
+              <th style="text-align:left; padding:10px 8px;">指標</th>
+              <th style="text-align:right; padding:10px 8px;">當前值</th>
+              <th style="text-align:right; padding:10px 8px;">歷史百分位</th>
+              <th style="padding:10px 8px;">溫度（0恐懼→100貪婪）</th>
+              <th style="text-align:right; padding:10px 8px;">P10</th>
+              <th style="text-align:right; padding:10px 8px;">中位數</th>
+              <th style="text-align:right; padding:10px 8px;">P90</th>
+              <th style="text-align:right; padding:10px 8px;">樣本數</th>
+            </tr>
+          </thead>
+          <tbody style="border-top:2px solid #e2e8f0;">${{rows}}</tbody>
+        </table>
+        <div style="font-size:12px; color:#bbb; margin-top:16px; text-align:right;">
+          ※ 百分位基準：analyze_market.py 抓取的完整歷史資料（最多 20 年）
+        </div>
+      </div>`;
+    }}
+
+    // ── 歷史事件：fetch MD → marked.js 渲染 ─────────────────
+    async function loadEvents() {{
+      const el = document.getElementById('events-content');
+      if (el.dataset.loaded) return;
+      try {{
+        const resp = await fetch('taiwan_market_events.md');
+        if (!resp.ok) throw new Error('not found');
+        const text = await resp.text();
+        el.innerHTML = marked.parse(text);
+        el.dataset.loaded = '1';
+      }} catch(e) {{
+        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:48px; margin-bottom:16px;">📅</div>
+          <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_events.md</div>
+        </div>`;
+      }}
+    }}
+
 
     function resetAxes(id) {{
       const el = document.getElementById(id);
@@ -718,6 +830,18 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
     }}
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    #events-content {{ max-width:960px; margin:0 auto; font-size:14px; line-height:1.7; padding:8px 0; }}
+    #events-content h1, #events-content h2 {{ border-bottom:1px solid #e2e8f0; padding-bottom:6px; }}
+    #events-content table {{ border-collapse:collapse; width:100%; margin:12px 0; }}
+    #events-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; }}
+    #events-content td {{ padding:7px 12px; border-bottom:1px solid #f0f0f0; }}
+    #events-content tr:hover td {{ background:#fafafa; }}
+    #events-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:13px; }}
+    #events-content pre {{ background:#f8f9fb; padding:12px 16px; border-radius:6px; overflow-x:auto; }}
+    #events-content blockquote {{ border-left:4px solid #2979c8; margin:0; padding:8px 16px; background:#f0f6ff; color:#444; }}
+  </style>
 </body>
 </html>"""
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
