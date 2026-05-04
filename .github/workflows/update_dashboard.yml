@@ -2,8 +2,9 @@ name: Update Dashboard
 
 on:
   schedule:
-    - cron: "32 9 * * 1-5"   # 台灣時間週一至週五 17:32（UTC+8），update_stock 之後跑
-  workflow_dispatch:           # 允許手動觸發
+    # 台灣時間 17:05（UTC 09:05）
+    - cron: "5 9 * * 1-5"
+  workflow_dispatch: # 允許手動觸發
 
 jobs:
   build:
@@ -25,8 +26,8 @@ jobs:
       - name: Generate dashboard.html
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
-          FINMIND_TOKEN:      ${{ secrets.FINMIND_TOKEN }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python run_dashboard.py
 
       - name: Commit & push dashboard.html
