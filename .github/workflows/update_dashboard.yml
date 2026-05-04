@@ -2,7 +2,7 @@ name: Update Dashboard
 
 on:
   schedule:
-    - cron: "0 10 * * 1-5"   # 台灣時間週一至週五 18:00（UTC+8）
+    - cron: "32 9 * * 1-5"   # 台灣時間週一至週五 17:32（UTC+8），update_stock 之後跑
   workflow_dispatch:           # 允許手動觸發
 
 jobs:
