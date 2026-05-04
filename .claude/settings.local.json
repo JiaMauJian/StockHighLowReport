@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python run_dashboard.py)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(dir D:\\\\StockHighLowReport /b /a-d)",
+      "Bash(pip freeze *)"
     ]
   }
 }
