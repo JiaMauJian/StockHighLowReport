@@ -419,6 +419,121 @@ def run_dashboard():
     _write_html(figs, end_date, summary)
 
 
+def _load_market_temp_html() -> str:
+    """讀取 market_temp_latest.json，回傳市場溫度分頁 HTML。"""
+    import json
+    json_path = os.path.join(os.path.dirname(__file__), "market_temp_latest.json")
+    if not os.path.exists(json_path):
+        return """
+        <div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:48px; margin-bottom:16px;">🌡️</div>
+          <div style="font-size:18px; font-weight:600; margin-bottom:8px;">尚無市場溫度資料</div>
+          <div style="font-size:14px;">請在本機執行 <code>python analyze_market.py</code> 後 push 至 GitHub</div>
+        </div>"""
+    with open(json_path, encoding="utf-8") as f:
+        d = json.load(f)
+
+    avg = d["avg_sentiment"]
+    if avg >= 75:   label, color = "過熱（貪婪）", "#dc2626"
+    elif avg >= 55: label, color = "偏熱",         "#f97316"
+    elif avg >= 45: label, color = "中性",         "#16a34a"
+    elif avg >= 25: label, color = "偏冷",         "#2563eb"
+    else:           label, color = "過冷（恐懼）", "#7c3aed"
+
+    rows = ""
+    for s in d["stats"]:
+        bar_w = int(s["sentiment_pct"])
+        bar_color = "#dc2626" if s["sentiment_pct"] >= 60 else ("#2563eb" if s["sentiment_pct"] <= 40 else "#f97316")
+        rows += f"""
+        <tr>
+          <td>{s['name']}</td>
+          <td style="text-align:right; font-weight:600;">{s['current']:,.2f}</td>
+          <td style="text-align:right;">{s['percentile']:.1f}%</td>
+          <td style="min-width:160px; padding:0 8px;">
+            <div style="background:#eee; border-radius:4px; height:14px; position:relative;">
+              <div style="width:{bar_w}%; background:{bar_color}; height:100%; border-radius:4px;"></div>
+            </div>
+            <div style="font-size:11px; color:#666; text-align:right;">{s['sentiment_pct']:.1f}</div>
+          </td>
+          <td style="text-align:right; color:#888; font-size:13px;">{s['p10']:.2f}</td>
+          <td style="text-align:right; color:#888; font-size:13px;">{s['median']:.2f}</td>
+          <td style="text-align:right; color:#888; font-size:13px;">{s['p90']:.2f}</td>
+          <td style="text-align:right; color:#aaa; font-size:12px;">{s['n']:,}</td>
+        </tr>"""
+
+    return f"""
+    <div style="max-width:960px; margin:0 auto;">
+      <div style="display:flex; align-items:center; gap:24px; margin-bottom:24px; padding:20px 24px;
+                  background:#f8f9fb; border-radius:12px; border:1px solid #e2e8f0;">
+        <div>
+          <div style="font-size:13px; color:#888; margin-bottom:4px;">整體市場溫度</div>
+          <div style="font-size:36px; font-weight:800; color:{color};">{label}</div>
+        </div>
+        <div style="flex:1;">
+          <div style="background:#eee; border-radius:8px; height:20px; position:relative;">
+            <div style="width:{int(avg)}%; background:{color}; height:100%; border-radius:8px;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:#888; margin-top:4px;">
+            <span>0 極度恐懼</span><span style="font-weight:700; color:{color};">{avg:.1f} / 100</span><span>100 極度貪婪</span>
+          </div>
+        </div>
+        <div style="text-align:right; font-size:13px; color:#aaa;">
+          TAIEX {d['taiex']:,.0f}<br>資料日期 {d['latest_date']}<br>更新 {d['generated_at']}
+        </div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="background:#f1f5f9; color:#555;">
+            <th style="text-align:left; padding:10px 8px;">指標</th>
+            <th style="text-align:right; padding:10px 8px;">當前值</th>
+            <th style="text-align:right; padding:10px 8px;">歷史百分位</th>
+            <th style="padding:10px 8px;">溫度（0恐懼→100貪婪）</th>
+            <th style="text-align:right; padding:10px 8px;">P10</th>
+            <th style="text-align:right; padding:10px 8px;">中位數</th>
+            <th style="text-align:right; padding:10px 8px;">P90</th>
+            <th style="text-align:right; padding:10px 8px;">樣本數</th>
+          </tr>
+        </thead>
+        <tbody style="border-top:2px solid #e2e8f0;">{rows}</tbody>
+      </table>
+      <div style="font-size:12px; color:#bbb; margin-top:16px; text-align:right;">
+        ※ 百分位基準：analyze_market.py 抓取的完整歷史資料（最多 20 年）
+      </div>
+    </div>"""
+
+
+def _load_events_html() -> str:
+    """讀取 taiwan_market_events.md，回傳歷史事件分頁 HTML（用 marked.js 渲染）。"""
+    md_path = os.path.join(os.path.dirname(__file__), "taiwan_market_events.md")
+    if not os.path.exists(md_path):
+        return """
+        <div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:48px; margin-bottom:16px;">📅</div>
+          <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_events.md</div>
+        </div>"""
+    with open(md_path, encoding="utf-8") as f:
+        md_content = f.read()
+    # 將 markdown 內容 JS 字串跳脫
+    md_escaped = md_content.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    return f"""
+    <div id="events-content" style="max-width:960px; margin:0 auto; font-size:14px; line-height:1.7;"></div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+      document.getElementById('events-content').innerHTML =
+        marked.parse(`{md_escaped}`);
+    </script>
+    <style>
+      #events-content h1,h2 {{ border-bottom:1px solid #e2e8f0; padding-bottom:6px; }}
+      #events-content table {{ border-collapse:collapse; width:100%; margin:12px 0; }}
+      #events-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; }}
+      #events-content td {{ padding:7px 12px; border-bottom:1px solid #f0f0f0; }}
+      #events-content tr:hover td {{ background:#fafafa; }}
+      #events-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:13px; }}
+      #events-content pre {{ background:#f8f9fb; padding:12px 16px; border-radius:6px; overflow-x:auto; }}
+      #events-content blockquote {{ border-left:4px solid #2979c8; margin:0; padding:8px 16px; background:#f0f6ff; color:#444; }}
+    </style>"""
+
+
 def _write_html(figs: list, end_date: str, summary_html: str = ""):
     # 第一張圖帶入 plotlyjs CDN，其餘不重複載入
     divs = []
@@ -430,6 +545,8 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
         ))
 
     d0, d1, d2, d3, d4, d5 = divs
+    market_temp_html = _load_market_temp_html()
+    events_html      = _load_events_html()
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -440,117 +557,104 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #fff; font-family: sans-serif; }}
     .container {{ max-width: 1600px; margin: 0 auto; padding: 16px 20px 40px; }}
-    h1 {{ font-size: 18px; margin: 0 0 12px; color: #333; }}
-    .btn-group {{
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-    }}
-    .btn-group button {{
-      padding: 8px 20px;
-      font-size: 15px;
-      border: 2px solid #2979c8;
-      border-radius: 20px;
-      background: #fff;
-      color: #2979c8;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-weight: 500;
-    }}
-    .btn-group button:hover {{ background: #e8f0fb; }}
-    .btn-group button.active {{
-      background: #2979c8;
-      color: #fff;
-    }}
     .summary-bar {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0;
-      background: #f8f9fb;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 10px 8px;
-      margin-bottom: 14px;
+      display: flex; flex-wrap: wrap; gap: 0;
+      background: #f8f9fb; border: 1px solid #e2e8f0;
+      border-radius: 8px; padding: 10px 8px; margin-bottom: 14px;
     }}
-    .sc {{
-      flex: 1;
-      min-width: 110px;
-      padding: 4px 16px;
-      border-right: 1px solid #dde3ed;
-    }}
+    .sc {{ flex:1; min-width:110px; padding:4px 16px; border-right:1px solid #dde3ed; }}
     .sc:last-child {{ border-right: none; }}
-    .sc-label {{
-      font-size: 13px;
-      color: #666;
-      margin-bottom: 2px;
-      white-space: nowrap;
+    .sc-label  {{ font-size:13px; color:#666; margin-bottom:2px; white-space:nowrap; }}
+    .sc-value  {{ font-size:26px; font-weight:700; color:#222; line-height:1.2; }}
+    .s-delta   {{ font-size:13px; margin-top:2px; display:block; }}
+    .s-delta.up {{ color:#16a34a; }}
+    .s-delta.dn {{ color:#dc2626; }}
+    .s-delta.neutral {{ color:#888; }}
+
+    /* ── Tab 導覽 ── */
+    .tab-nav {{
+      display: flex; gap: 4px; margin-bottom: 16px;
+      border-bottom: 2px solid #e2e8f0; padding-bottom: 0;
     }}
-    .sc-value {{
-      font-size: 26px;
-      font-weight: 700;
-      color: #222;
-      line-height: 1.2;
+    .tab-btn {{
+      padding: 10px 24px; font-size: 15px; font-weight: 600;
+      border: none; border-radius: 8px 8px 0 0;
+      background: transparent; color: #888;
+      cursor: pointer; transition: all 0.15s;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
     }}
-    .s-delta {{
-      font-size: 13px;
-      margin-top: 2px;
-      display: block;
+    .tab-btn:hover {{ color: #2979c8; background: #f0f6ff; }}
+    .tab-btn.active {{ color: #2979c8; border-bottom-color: #2979c8; background: #f0f6ff; }}
+
+    /* ── Tab 內容 ── */
+    .tab-content {{ display: none; }}
+    .tab-content.active {{ display: block; }}
+
+    /* ── 圖表 tab 工具列 ── */
+    .btn-group {{ display:flex; gap:8px; margin-bottom:16px; }}
+    .btn-group button {{
+      padding:8px 20px; font-size:15px; border:2px solid #2979c8;
+      border-radius:20px; background:#fff; color:#2979c8;
+      cursor:pointer; transition:all 0.15s; font-weight:500;
     }}
-    .s-delta.up  {{ color: #16a34a; }}
-    .s-delta.dn  {{ color: #dc2626; }}
-    .s-delta.neutral {{ color: #888; }}
-    .grid {{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0px 12px;
-    }}
-    .grid.one-col {{
-      grid-template-columns: 1fr;
-    }}
+    .btn-group button:hover {{ background:#e8f0fb; }}
+    .btn-group button.active {{ background:#2979c8; color:#fff; }}
     .col-btn {{
-      padding: 8px 14px;
-      font-size: 15px;
-      border: 2px solid #888;
-      border-radius: 20px;
-      background: #fff;
-      color: #555;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-weight: 500;
+      padding:8px 14px; font-size:15px; border:2px solid #888;
+      border-radius:20px; background:#fff; color:#555;
+      cursor:pointer; transition:all 0.15s; font-weight:500;
     }}
-    .col-btn:hover {{ background: #f0f0f0; }}
-    .col-btn.active {{
-      background: #555;
-      color: #fff;
-      border-color: #555;
-    }}
+    .col-btn:hover {{ background:#f0f0f0; }}
+    .col-btn.active {{ background:#555; color:#fff; border-color:#555; }}
+    .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:0px 12px; }}
+    .grid.one-col {{ grid-template-columns:1fr; }}
   </style>
 </head>
 <body>
   <div class="container">
     {summary_html}
-    <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
-      <div class="btn-group" style="margin-bottom:0">
-        <button onclick="setRange(0.5, this)">半年</button>
-        <button onclick="setRange(1,   this)">1 年</button>
-        <button onclick="setRange(3,   this)" class="active">3 年</button>
-        <button onclick="setRange(5,   this)">5 年</button>
-        <button onclick="setRange(10,  this)">10 年</button>
-        <button onclick="setAll(this)">全部</button>
+
+    <!-- Tab 導覽 -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="showTab('charts', this)">📊 圖表</button>
+      <button class="tab-btn"        onclick="showTab('market-temp', this)">🌡️ 市場溫度</button>
+      <button class="tab-btn"        onclick="showTab('events', this)">📅 歷史事件</button>
+    </div>
+
+    <!-- 圖表 tab -->
+    <div id="tab-charts" class="tab-content active">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+        <div class="btn-group" style="margin-bottom:0">
+          <button onclick="setRange(0.5, this)">半年</button>
+          <button onclick="setRange(1,   this)">1 年</button>
+          <button onclick="setRange(3,   this)" class="active">3 年</button>
+          <button onclick="setRange(5,   this)">5 年</button>
+          <button onclick="setRange(10,  this)">10 年</button>
+          <button onclick="setAll(this)">全部</button>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
+          <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
+        </div>
       </div>
-      <div style="display:flex; gap:6px;">
-        <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
-        <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
+      <div class="grid" id="main-grid">
+        <div>{d0}</div>
+        <div>{d1}</div>
+        <div>{d2}</div>
+        <div>{d3}</div>
+        <div>{d4}</div>
+        <div>{d5}</div>
       </div>
     </div>
 
-    <div class="grid" id="main-grid">
-      <div>{d0}</div>
-      <div>{d1}</div>
-      <div>{d2}</div>
-      <div>{d3}</div>
-      <div>{d4}</div>
-      <div>{d5}</div>
+    <!-- 市場溫度 tab -->
+    <div id="tab-market-temp" class="tab-content">
+      {market_temp_html}
+    </div>
+
+    <!-- 歷史事件 tab -->
+    <div id="tab-events" class="tab-content">
+      {events_html}
     </div>
   </div>
 
@@ -558,6 +662,16 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     const ALL_PLOTS  = {str(ALL_PLOT_IDS).replace("'", '"')};
     const MAIN_PLOTS = ["plot-low", "plot-high", "plot-margin", "plot-cnn"];
     const MACD_PLOTS = ["plot-macd-taiex", "plot-macd-tpex"];
+
+    function showTab(name, btn) {{
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      btn.classList.add('active');
+      if (name === 'charts') {{
+        ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
+      }}
+    }}
 
     function resetAxes(id) {{
       const el = document.getElementById(id);
@@ -575,33 +689,24 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       const months = Math.round(years * 12);
       start.setMonth(start.getMonth() - months);
       const fmt = d => d.toISOString().split('T')[0];
-
-      // 主圖：reset 後設指定年份 X 範圍
       MAIN_PLOTS.forEach(id => {{
         const el = resetAxes(id);
-        Plotly.relayout(el, {{
-          'xaxis.autorange': false,
-          'xaxis.range': [fmt(start), fmt(end)]
-        }});
+        Plotly.relayout(el, {{'xaxis.autorange': false, 'xaxis.range': [fmt(start), fmt(end)]}});
       }});
-
-      // MACD（月線）：只 reset，不覆寫 x 範圍（避免日期格式不符切到 K 棒）
       MACD_PLOTS.forEach(id => resetAxes(id));
     }}
 
     function setAll(btn) {{
       btn.closest('.btn-group').querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      // 主圖：只 autorange X 軸，Y 軸維持原本固定範圍（如 0~100）
       MAIN_PLOTS.forEach(id => {{
-        const el = document.getElementById(id);
-        Plotly.relayout(el, {{'xaxis.autorange': true}});
+        Plotly.relayout(document.getElementById(id), {{'xaxis.autorange': true}});
       }});
-      // MACD 月線圖：X、Y 軸都 autorange
       MACD_PLOTS.forEach(id => {{
-        const el = document.getElementById(id);
-        Plotly.relayout(el, {{'xaxis.autorange': true, 'yaxis.autorange': true,
-                               'yaxis2.autorange': true, 'yaxis3.autorange': true}});
+        Plotly.relayout(document.getElementById(id), {{
+          'xaxis.autorange': true, 'yaxis.autorange': true,
+          'yaxis2.autorange': true, 'yaxis3.autorange': true
+        }});
       }});
     }}
 
@@ -609,11 +714,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       btn.closest('div').querySelectorAll('.col-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const grid = document.getElementById('main-grid');
-      if (n === 1) {{
-        grid.classList.add('one-col');
-      }} else {{
-        grid.classList.remove('one-col');
-      }}
+      grid.classList.toggle('one-col', n === 1);
       ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
     }}
   </script>
