@@ -1,10 +1,11 @@
 {
   "version": 2,
   "builds": [
-    { "src": "dashboard.html", "use": "@vercel/static" }
+    { "src": "dashboard.html", "use": "@vercel/static" },
+    { "src": "taiwan_market_events.md", "use": "@vercel/static" },
+    { "src": "market_temp_latest.json", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/", "dest": "/dashboard.html" },
-    { "src": "/dashboard.html", "dest": "/dashboard.html" }
+    { "src": "/", "dest": "/dashboard.html" }
   ]
 }
