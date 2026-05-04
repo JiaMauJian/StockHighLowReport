@@ -707,7 +707,9 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
         const el = resetAxes(id);
         Plotly.relayout(el, {{'xaxis.autorange': false, 'xaxis.range': [fmt(start), fmt(end)]}});
       }});
-      MACD_PLOTS.forEach(id => resetAxes(id));
+      MACD_PLOTS.forEach(id => {{
+        Plotly.relayout(document.getElementById(id), {{'xaxis.autorange': false, 'xaxis.range': [fmt(start), fmt(end)]}});
+      }});
     }}
 
     function setAll(btn) {{
@@ -734,15 +736,66 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
   </script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
-    #events-content {{ max-width:960px; margin:0 auto; font-size:14px; line-height:1.7; padding:8px 0; }}
-    #events-content h1, #events-content h2 {{ border-bottom:1px solid #e2e8f0; padding-bottom:6px; }}
-    #events-content table {{ border-collapse:collapse; width:100%; margin:12px 0; }}
-    #events-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; }}
-    #events-content td {{ padding:7px 12px; border-bottom:1px solid #f0f0f0; }}
-    #events-content tr:hover td {{ background:#fafafa; }}
-    #events-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:13px; }}
-    #events-content pre {{ background:#f8f9fb; padding:12px 16px; border-radius:6px; overflow-x:auto; }}
-    #events-content blockquote {{ border-left:4px solid #2979c8; margin:0; padding:8px 16px; background:#f0f6ff; color:#444; }}
+    #events-content {{
+      max-width: 860px; margin: 0 auto; padding: 16px 0;
+      font-size: 15px; line-height: 1.8; color: #1a1a1a;
+      text-align: left;
+    }}
+    #events-content h1 {{
+      font-size: 22px; font-weight: 700; color: #111;
+      border-bottom: 2px solid #2979c8; padding-bottom: 8px; margin-top: 32px; margin-bottom: 16px;
+      text-align: left;
+    }}
+    #events-content h2 {{
+      font-size: 18px; font-weight: 700; color: #1a1a1a;
+      border-left: 4px solid #2979c8; padding-left: 12px;
+      margin-top: 28px; margin-bottom: 10px; border-bottom: none;
+      text-align: left;
+    }}
+    #events-content h3 {{
+      font-size: 15px; font-weight: 600; color: #333;
+      margin-top: 20px; margin-bottom: 6px;
+      text-align: left;
+    }}
+    #events-content ul, #events-content ol {{
+      color: #1a1a1a; padding-left: 24px; margin: 6px 0;
+      text-align: left;
+    }}
+    #events-content li {{ margin-bottom: 4px; color: #1a1a1a; }}
+    #events-content p {{ margin: 8px 0; text-align: left; color: #1a1a1a; }}
+    #events-content strong {{ color: #111; }}
+    #events-content table {{
+      border-collapse: collapse; width: 100%; margin: 16px 0;
+      font-size: 14px;
+    }}
+    #events-content th {{
+      background: #f1f5f9; padding: 9px 14px;
+      text-align: left; color: #333;
+      border-bottom: 2px solid #d1d9e6;
+    }}
+    #events-content td {{
+      padding: 8px 14px; border-bottom: 1px solid #eef0f4; color: #1a1a1a;
+      text-align: left;
+    }}
+    #events-content tr:hover td {{ background: #fafbff; }}
+    #events-content code {{
+      background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+      font-size: 13px; color: #c7254e;
+    }}
+    #events-content pre {{
+      background: #f8f9fb; padding: 14px 18px; border-radius: 8px; overflow-x: auto;
+    }}
+    #events-content pre code {{
+      background: none; padding: 0; color: #2d2d2d; font-size: 14px;
+    }}
+    #events-content blockquote {{
+      border-left: 4px solid #2979c8; margin: 12px 0;
+      padding: 10px 18px; background: #f0f6ff; color: #444;
+      border-radius: 0 6px 6px 0;
+    }}
+    #events-content hr {{
+      border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;
+    }}
   </style>
 </body>
 </html>"""
