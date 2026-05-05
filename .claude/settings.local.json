@@ -4,7 +4,9 @@
       "Bash(python run_dashboard.py)",
       "Bash(python -c ' *)",
       "Bash(dir D:\\\\StockHighLowReport /b /a-d)",
-      "Bash(pip freeze *)"
+      "Bash(pip freeze *)",
+      "Bash(dir d:\\\\StockHighLowReport\\\\*.py)",
+      "PowerShell(Get-ChildItem \"d:\\\\StockHighLowReport\" -File | Where-Object { $_.Extension -in \".py\", \".html\", \".md\", \".txt\" } | Select-Object Name)"
     ]
   }
 }

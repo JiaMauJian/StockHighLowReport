@@ -2,8 +2,8 @@ name: Update Dashboard
 
 on:
   schedule:
-    # 台灣時間 17:05（UTC 09:05）
-    - cron: "5 9 * * 1-5"
+    # 台灣時間 17:17，在增量滾算60日新高新低完成後再跑
+    - cron: "17 9 * * 1-5"
   workflow_dispatch: # 允許手動觸發
 
 permissions:
