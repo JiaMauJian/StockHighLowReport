@@ -1,9 +1,7 @@
 name: 增量滾算60日新高新低
 
 on:
-  schedule:
-    # 台灣時間 17:05
-    - cron: "5 9 * * 1-5"
+  # 使用 https://console.cron-job.org/jobs 觸發
   workflow_dispatch:
 
 jobs:

@@ -1,10 +1,8 @@
-name: Update Dashboard
+name: Dashboard更新
 
 on:
-  schedule:
-    # 台灣時間 17:17，在增量滾算60日新高新低完成後再跑
-    - cron: "17 9 * * 1-5"
-  workflow_dispatch: # 允許手動觸發
+  # 使用 https://console.cron-job.org/jobs 觸發
+  workflow_dispatch:
 
 permissions:
   contents: write
