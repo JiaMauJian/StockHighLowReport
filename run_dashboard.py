@@ -629,6 +629,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     <div class="tab-nav">
       <button class="tab-btn active" onclick="showTab('charts', this)">📊 圖表</button>
       <button class="tab-btn"        onclick="showTab('events', this)">📅 歷史事件</button>
+      <button class="tab-btn"        onclick="showTab('cycles', this)">📈 景氣循環</button>
     </div>
 
     <!-- 圖表 tab -->
@@ -661,6 +662,11 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     <div id="tab-events" class="tab-content">
       <div id="events-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
     </div>
+
+    <!-- 景氣循環 tab -->
+    <div id="tab-cycles" class="tab-content">
+      <div id="cycles-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
+    </div>
   </div>
 
   <script>
@@ -677,6 +683,8 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
         ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
       }} else if (name === 'events') {{
         loadEvents();
+      }} else if (name === 'cycles') {{
+        loadCycles();
       }}
     }}
 
@@ -695,6 +703,24 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
         el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
           <div style="font-size:48px; margin-bottom:16px;">📅</div>
           <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_events.md</div>
+        </div>`;
+      }}
+    }}
+
+    async function loadCycles() {{
+      const el = document.getElementById('cycles-content');
+      if (el.dataset.loaded) return;
+      try {{
+        const resp = await fetch(encodeURIComponent('台股重大事件景氣循環對照.md'));
+        if (!resp.ok) throw new Error('not found');
+        const text = await resp.text();
+        marked.setOptions({{ gfm: true, breaks: true }});
+        el.innerHTML = marked.parse(text);
+        el.dataset.loaded = '1';
+      }} catch(e) {{
+        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:48px; margin-bottom:16px;">📈</div>
+          <div style="font-size:18px; font-weight:600;">找不到 台股重大事件景氣循環對照.md</div>
         </div>`;
       }}
     }}

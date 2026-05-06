@@ -83,10 +83,10 @@ def compute_detail(df, query_date, stock_name):
 
     df = df.set_index("date").sort_index()
     df["min60"] = df.groupby("stock_id")["close"].transform(
-        lambda x: x.rolling(f"{DAYS}D", min_periods=DAYS).min()
+        lambda x: x.rolling(f"{DAYS}D", min_periods=1).min()
     )
     df["max60"] = df.groupby("stock_id")["close"].transform(
-        lambda x: x.rolling(f"{DAYS}D", min_periods=DAYS).max()
+        lambda x: x.rolling(f"{DAYS}D", min_periods=1).max()
     )
     df = df.reset_index()
 
