@@ -532,8 +532,8 @@ def _load_events_html() -> str:
       .md-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; white-space:nowrap; }}
       .md-content td {{ padding:7px 12px; border-bottom:1px solid #f0f0f0; }}
       .md-content tr:hover td {{ background:#fafafa; }}
-      .md-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:13px; }}
-      .md-content pre {{ background:#f8f9fb; padding:12px 16px; border-radius:6px; overflow-x:auto; }}
+      .md-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:16px; }}
+      .md-content pre {{ background:#f8f9fb; padding:12px 16px; border-radius:6px; overflow-x:auto; font-size:16px; }}
       .md-content blockquote {{ border-left:4px solid #2979c8; margin:0; padding:8px 16px; background:#f0f6ff; color:#444; }}
     </style>"""
 
@@ -782,7 +782,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
   <style>
     .md-content {{
       max-width: 1200px; margin: 0 auto; padding: 16px 0;
-      font-size: 20px; line-height: 1.8; color: #1a1a1a;
+      font-size: 18px; line-height: 1.8; color: #1a1a1a;
       text-align: left;
     }}
     .md-content h1 {{
@@ -791,13 +791,13 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       text-align: left;
     }}
     .md-content h2 {{
-      font-size: 18px; font-weight: 700; color: #1a1a1a;
+      font-size: 20px; font-weight: 700; color: #1a1a1a;
       border-left: 4px solid #2979c8; padding-left: 12px;
       margin-top: 28px; margin-bottom: 10px; border-bottom: none;
       text-align: left;
     }}
     .md-content h3 {{
-      font-size: 15px; font-weight: 600; color: #333;
+      font-size: 18px; font-weight: 600; color: #333;
       margin-top: 20px; margin-bottom: 6px;
       text-align: left;
     }}
@@ -829,7 +829,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       background: #f8f9fb; padding: 14px 18px; border-radius: 8px; overflow-x: auto;
     }}
     .md-content pre code {{
-      background: none; padding: 0; color: #2d2d2d; font-size: 14px;
+      background: none; padding: 0; color: #2d2d2d; font-size: 16px;
     }}
     .md-content blockquote {{
       border-left: 4px solid #2979c8; margin: 12px 0;
