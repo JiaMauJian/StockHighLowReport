@@ -538,7 +538,18 @@ def _load_events_html() -> str:
     </style>"""
 
 
+def _read_md_escaped(filename: str) -> str:
+    """讀取 markdown 檔，回傳可嵌入 JS 反引號字串的 escaped 內容；找不到回傳空字串。"""
+    path = os.path.join(os.path.dirname(__file__), filename)
+    if not os.path.exists(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+    return content.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+
+
 def _write_html(figs: list, end_date: str, summary_html: str = ""):
+    cycles_md = _read_md_escaped("台股重大事件景氣循環對照.md")
     # 第一張圖帶入 plotlyjs CDN，其餘不重複載入
     divs = []
     for i, (fig, pid) in enumerate(zip(figs, ALL_PLOT_IDS)):
@@ -707,22 +718,20 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       }}
     }}
 
-    async function loadCycles() {{
+    const CYCLES_MD = `{cycles_md}`;
+    function loadCycles() {{
       const el = document.getElementById('cycles-content');
       if (el.dataset.loaded) return;
-      try {{
-        const resp = await fetch(encodeURIComponent('台股重大事件景氣循環對照.md'));
-        if (!resp.ok) throw new Error('not found');
-        const text = await resp.text();
-        marked.setOptions({{ gfm: true, breaks: true }});
-        el.innerHTML = marked.parse(text);
-        el.dataset.loaded = '1';
-      }} catch(e) {{
+      if (!CYCLES_MD) {{
         el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
           <div style="font-size:48px; margin-bottom:16px;">📈</div>
           <div style="font-size:18px; font-weight:600;">找不到 台股重大事件景氣循環對照.md</div>
         </div>`;
+        return;
       }}
+      marked.setOptions({{ gfm: true, breaks: true }});
+      el.innerHTML = marked.parse(CYCLES_MD);
+      el.dataset.loaded = '1';
     }}
 
 
