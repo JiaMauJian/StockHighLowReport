@@ -899,5 +899,5 @@ def run_dashboard_test():
 
 
 if __name__ == "__main__":
-    run_dashboard_test()
-    #run_dashboard()
+    #run_dashboard_test()
+    run_dashboard()
