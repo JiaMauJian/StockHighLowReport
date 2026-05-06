@@ -529,7 +529,7 @@ def _load_events_html() -> str:
     <style>
       .md-content h1,h2 {{ border-bottom:1px solid #e2e8f0; padding-bottom:6px; }}
       .md-content table {{ border-collapse:collapse; width:100%; margin:12px 0; }}
-      .md-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; }}
+      .md-content th {{ background:#f1f5f9; padding:8px 12px; text-align:left; white-space:nowrap; }}
       .md-content td {{ padding:7px 12px; border-bottom:1px solid #f0f0f0; }}
       .md-content tr:hover td {{ background:#fafafa; }}
       .md-content code {{ background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:13px; }}
@@ -781,8 +781,8 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
     .md-content {{
-      max-width: 860px; margin: 0 auto; padding: 16px 0;
-      font-size: 15px; line-height: 1.8; color: #1a1a1a;
+      max-width: 1200px; margin: 0 auto; padding: 16px 0;
+      font-size: 20px; line-height: 1.8; color: #1a1a1a;
       text-align: left;
     }}
     .md-content h1 {{
@@ -809,12 +809,11 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     .md-content p {{ margin: 8px 0; text-align: left; color: #1a1a1a; }}
     .md-content strong {{ color: #111; }}
     .md-content table {{
-      border-collapse: collapse; width: 100%; margin: 16px 0;
-      font-size: 14px;
+      border-collapse: collapse; width: 100%; margin: 20px 0;
     }}
     .md-content th {{
       background: #f1f5f9; padding: 9px 14px;
-      text-align: left; color: #333;
+      text-align: left; color: #333; white-space: nowrap;
       border-bottom: 2px solid #d1d9e6;
     }}
     .md-content td {{
@@ -926,5 +925,5 @@ def run_dashboard_test():
 
 
 if __name__ == "__main__":
-    #run_dashboard_test()
-    run_dashboard()
+    run_dashboard_test()
+    #run_dashboard()
