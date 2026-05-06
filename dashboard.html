@@ -109,12 +109,12 @@
 
     <!-- 歷史事件 tab -->
     <div id="tab-events" class="tab-content">
-      <div id="events-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
+      <div id="events-content" class="md-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
     </div>
 
     <!-- 景氣循環 tab -->
     <div id="tab-cycles" class="tab-content">
-      <div id="cycles-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
+      <div id="cycles-content" class="md-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
     </div>
   </div>
 
@@ -228,64 +228,64 @@
   </script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
-    #events-content {
+    .md-content {
       max-width: 860px; margin: 0 auto; padding: 16px 0;
       font-size: 15px; line-height: 1.8; color: #1a1a1a;
       text-align: left;
     }
-    #events-content h1 {
+    .md-content h1 {
       font-size: 22px; font-weight: 700; color: #111;
       border-bottom: 2px solid #2979c8; padding-bottom: 8px; margin-top: 32px; margin-bottom: 16px;
       text-align: left;
     }
-    #events-content h2 {
+    .md-content h2 {
       font-size: 18px; font-weight: 700; color: #1a1a1a;
       border-left: 4px solid #2979c8; padding-left: 12px;
       margin-top: 28px; margin-bottom: 10px; border-bottom: none;
       text-align: left;
     }
-    #events-content h3 {
+    .md-content h3 {
       font-size: 15px; font-weight: 600; color: #333;
       margin-top: 20px; margin-bottom: 6px;
       text-align: left;
     }
-    #events-content ul, #events-content ol {
+    .md-content ul, .md-content ol {
       color: #1a1a1a; padding-left: 24px; margin: 6px 0;
       text-align: left;
     }
-    #events-content li { margin-bottom: 4px; color: #1a1a1a; }
-    #events-content p { margin: 8px 0; text-align: left; color: #1a1a1a; }
-    #events-content strong { color: #111; }
-    #events-content table {
+    .md-content li { margin-bottom: 4px; color: #1a1a1a; }
+    .md-content p { margin: 8px 0; text-align: left; color: #1a1a1a; }
+    .md-content strong { color: #111; }
+    .md-content table {
       border-collapse: collapse; width: 100%; margin: 16px 0;
       font-size: 14px;
     }
-    #events-content th {
+    .md-content th {
       background: #f1f5f9; padding: 9px 14px;
       text-align: left; color: #333;
       border-bottom: 2px solid #d1d9e6;
     }
-    #events-content td {
+    .md-content td {
       padding: 8px 14px; border-bottom: 1px solid #eef0f4; color: #1a1a1a;
       text-align: left;
     }
-    #events-content tr:hover td { background: #fafbff; }
-    #events-content code {
+    .md-content tr:hover td { background: #fafbff; }
+    .md-content code {
       background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
       font-size: 13px; color: #c7254e;
     }
-    #events-content pre {
+    .md-content pre {
       background: #f8f9fb; padding: 14px 18px; border-radius: 8px; overflow-x: auto;
     }
-    #events-content pre code {
+    .md-content pre code {
       background: none; padding: 0; color: #2d2d2d; font-size: 14px;
     }
-    #events-content blockquote {
+    .md-content blockquote {
       border-left: 4px solid #2979c8; margin: 12px 0;
       padding: 10px 18px; background: #f0f6ff; color: #444;
       border-radius: 0 6px 6px 0;
     }
-    #events-content hr {
+    .md-content hr {
       border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;
     }
   </style>
