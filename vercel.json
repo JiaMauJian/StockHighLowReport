@@ -3,6 +3,7 @@
   "builds": [
     { "src": "dashboard.html", "use": "@vercel/static" },
     { "src": "taiwan_market_events.md", "use": "@vercel/static" },
+    { "src": "taiwan_market_cycles.md", "use": "@vercel/static" },
     { "src": "market_temp_latest.json", "use": "@vercel/static" }
   ],
   "routes": [
