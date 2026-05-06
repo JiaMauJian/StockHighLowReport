@@ -132,7 +132,7 @@ def _fetch_monthly_macd(api, stock_id: str) -> pd.DataFrame:
     return df
 
 
-def _build_macd_fig(df: pd.DataFrame, title: str) -> go.Figure:
+def _build_macd_fig(df: pd.DataFrame, title: str, default_start: str = None) -> go.Figure:
     fig = make_subplots(
         rows=3, cols=1,
         shared_xaxes=True,
@@ -174,8 +174,12 @@ def _build_macd_fig(df: pd.DataFrame, title: str) -> go.Figure:
                     hovertemplate="MACD9 : %{y:.2f}<extra></extra>"),
             row=row, col=1,
         )
-    default_3yr = (date.today() - relativedelta(years=3, months=1)).strftime("%Y-%m")
-    end_ym      = (date.today() + relativedelta(months=2)).strftime("%Y-%m")
+    start_ym = (
+        default_start[:7]
+        if default_start
+        else (date.today() - relativedelta(years=3, months=1)).strftime("%Y-%m")
+    )
+    end_ym   = (date.today() + relativedelta(months=2)).strftime("%Y-%m")
     fig.update_layout(
         height=1200,
         autosize=True,
@@ -188,7 +192,7 @@ def _build_macd_fig(df: pd.DataFrame, title: str) -> go.Figure:
         xaxis3_rangeslider_visible=False,
     )
     fig.update_xaxes(
-        range=[default_3yr, end_ym],
+        range=[start_ym, end_ym],
         showticklabels=True,
         tickformat="%Y-%m",
         showspikes=True,
@@ -370,8 +374,8 @@ def _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
     fig_cnn.update_traces(xhoverformat="%Y-%m-%d")
 
     # ── 圖5、6：月MACD ────────────────────────────────────────
-    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市")
-    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃")
+    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市", default_start)
+    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃",  default_start)
 
     return [fig_low, fig_high, fig_margin, fig_cnn, fig_taiex_macd, fig_tpex_macd]
 
