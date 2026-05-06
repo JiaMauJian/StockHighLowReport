@@ -16,6 +16,7 @@ python analyze_market.py
 ```
 
 跑完後會產生：
+
 - `market_temp_latest.json` ← 網頁用
 - `market_data_YYYYMMDD.xlsx` ← 你自己留存分析用
 - `market_analysis_YYYYMMDD.txt` ← 可貼給 Claude 分析用
@@ -58,11 +59,11 @@ git push
 
 需要這三個檔案：
 
-| 檔案 | 如何取得 |
-|------|---------|
-| `market_data_YYYYMMDD.xlsx` | 跑 `analyze_market.py` 產生 |
-| `market_analysis_YYYYMMDD.txt` | 同上 |
-| `taiwan_market_events.md` | 固定放在專案資料夾 |
+| 檔案                           | 如何取得                    |
+| ------------------------------ | --------------------------- |
+| `market_data_YYYYMMDD.xlsx`    | 跑 `analyze_market.py` 產生 |
+| `market_analysis_YYYYMMDD.txt` | 同上                        |
+| `taiwan_market_events.md`      | 固定放在專案資料夾          |
 
 開新對話，上傳三個檔案，貼上 `analysis_prompt.md` 裡的 Prompt。
 
@@ -80,23 +81,7 @@ git push
 
 ---
 
-## 網址
-
-| 環境 | 網址 |
-|------|------|
-| Vercel 線上版 | _(Vercel 部署後填入)_ |
-| 本機測試 | `python run_dashboard.py` → 開啟 `dashboard.html` |
-
----
-
 ## 常見問題
-
-**Q：網頁沒有更新？**
-→ 到 GitHub Actions 確認最新一次 workflow 是否成功（綠色勾勾）。
-→ 失敗的話點進去看錯誤訊息。
-
-**Q：Actions 跑失敗，顯示 API 錯誤？**
-→ 確認 GitHub Secrets 的三個 token 是否過期（FINMIND_TOKEN、TURSO_AUTH_TOKEN）。
 
 **Q：想在本機測試，但不想等 API？**
 → 把 `run_dashboard.py` 最後一行改成 `run_dashboard_test()` 跑，用假資料。

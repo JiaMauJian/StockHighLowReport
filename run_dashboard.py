@@ -382,7 +382,7 @@ def run_dashboard():
     today = date.today()
     end_date = today.strftime("%Y-%m-%d")
     start_date = (today - relativedelta(years=MAX_YEARS)).strftime("%Y-%m-%d")
-    default_start = (today - relativedelta(years=3)).strftime("%Y-%m-%d")
+    default_start = (today - relativedelta(months=6)).strftime("%Y-%m-%d")
 
     print("從 Turso 讀取新高新低資料...")
     df_hl, df_taiex = _load_from_turso(start_date)
@@ -550,6 +550,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>股市 Dashboard</title>
   <style>
     * {{ box-sizing: border-box; }}
@@ -571,7 +572,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
 
     /* ── Tab 導覽 ── */
     .tab-nav {{
-      display: flex; gap: 4px; margin-bottom: 16px;
+      display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px;
       border-bottom: 2px solid #e2e8f0; padding-bottom: 0;
     }}
     .tab-btn {{
@@ -589,7 +590,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     .tab-content.active {{ display: block; }}
 
     /* ── 圖表 tab 工具列 ── */
-    .btn-group {{ display:flex; gap:8px; margin-bottom:16px; }}
+    .btn-group {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }}
     .btn-group button {{
       padding:8px 20px; font-size:15px; border:2px solid #2979c8;
       border-radius:20px; background:#fff; color:#2979c8;
@@ -606,6 +607,14 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     .col-btn.active {{ background:#555; color:#fff; border-color:#555; }}
     .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:0px 12px; }}
     .grid.one-col {{ grid-template-columns:1fr; }}
+    @media (max-width: 1024px) {{ .grid {{ grid-template-columns:1fr !important; }} }}
+    @media (max-width: 600px) {{
+      .sc {{ flex: 0 0 calc(50% - 2px); min-width: 0; }}
+      .sc-value {{ font-size: 20px; }}
+      .tab-btn {{ padding: 8px 12px; font-size: 13px; }}
+      .btn-group button {{ padding: 6px 14px; font-size: 13px; }}
+      .container {{ padding: 10px 12px 32px; }}
+    }}
   </style>
 </head>
 <body>
@@ -620,19 +629,19 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
 
     <!-- 圖表 tab -->
     <div id="tab-charts" class="tab-content active">
-      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
-        <div class="btn-group" style="margin-bottom:0">
-          <button onclick="setRange(0.5, this)">半年</button>
-          <button onclick="setRange(1,   this)">1 年</button>
-          <button onclick="setRange(3,   this)" class="active">3 年</button>
-          <button onclick="setRange(5,   this)">5 年</button>
-          <button onclick="setRange(10,  this)">10 年</button>
-          <button onclick="setAll(this)">全部</button>
-        </div>
-        <div style="display:flex; gap:6px;">
-          <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
-          <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
-        </div>
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+      <div class="btn-group" style="margin-bottom:0;">
+        <button onclick="setRange(0.5, this)" class="active">半年</button>
+        <button onclick="setRange(1,   this)">1 年</button>
+        <button onclick="setRange(3,   this)">3 年</button>
+        <button onclick="setRange(5,   this)">5 年</button>
+        <button onclick="setRange(10,  this)">10 年</button>
+        <button onclick="setAll(this)">全部</button>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
+        <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
+      </div>
       </div>
       <div class="grid" id="main-grid">
         <div>{d0}</div>
@@ -733,6 +742,10 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       grid.classList.toggle('one-col', n === 1);
       ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
     }}
+
+    window.addEventListener('resize', () => {{
+      ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
+    }});
   </script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
@@ -882,5 +895,5 @@ def run_dashboard_test():
 
 
 if __name__ == "__main__":
-    #run_dashboard_test()
-    run_dashboard()
+    run_dashboard_test()
+    #run_dashboard()
