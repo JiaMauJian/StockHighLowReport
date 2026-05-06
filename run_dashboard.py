@@ -712,7 +712,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       const el = document.getElementById('cycles-content');
       if (el.dataset.loaded) return;
       try {{
-        const resp = await fetch('台股重大事件景氣循環對照.md');
+        const resp = await fetch('taiwan_market_cycles.md');
         if (!resp.ok) throw new Error('not found');
         const text = await resp.text();
         marked.setOptions({{ gfm: true, breaks: true }});
@@ -721,7 +721,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       }} catch(e) {{
         el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
           <div style="font-size:48px; margin-bottom:16px;">📈</div>
-          <div style="font-size:18px; font-weight:600;">找不到 台股重大事件景氣循環對照.md</div>
+          <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_cycles.md</div>
         </div>`;
       }}
     }}
