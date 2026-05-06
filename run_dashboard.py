@@ -925,5 +925,8 @@ def run_dashboard_test():
 
 
 if __name__ == "__main__":
-    run_dashboard_test()
-    #run_dashboard()
+    import sys
+    if "--test" in sys.argv:
+        run_dashboard_test()
+    else:
+        run_dashboard()
