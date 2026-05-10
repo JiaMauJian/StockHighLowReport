@@ -386,7 +386,7 @@ def run_dashboard():
 
     today = date.today()
     end_date = today.strftime("%Y-%m-%d")
-    start_date = (today - relativedelta(years=MAX_YEARS)).strftime("%Y-%m-%d")
+    start_date = "1990-01-01"
     default_start = (today - relativedelta(months=6)).strftime("%Y-%m-%d")
 
     print("從 Turso 讀取新高新低資料...")
