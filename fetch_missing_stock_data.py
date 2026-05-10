@@ -17,7 +17,6 @@ def fetch_missing_stock_data(token: str, db_path: str = 'stock.db'):
     df = df[df["industry_category"] != "存託憑證"]
     df = df.sort_values("date").drop_duplicates(subset=["stock_id"], keep="last")
     df = df.sort_values(by="stock_id")
-    stock_ids = df["stock_id"].tolist()
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -28,9 +27,17 @@ def fetch_missing_stock_data(token: str, db_path: str = 'stock.db'):
     cursor = conn.cursor()
 
     try:
+        cursor.execute("SELECT MAX(date) FROM stock_daily")
+        db_max_date = cursor.fetchone()[0]
+        print(f"資料庫最新日期：{db_max_date}")
+
+        # 只考慮 taiwan_stock_info date >= 資料庫最新日期的股票（排除已下市）
+        active_df = df[df["date"] >= db_max_date]
+        active_stock_ids = active_df["stock_id"].tolist()
+
         cursor.execute("SELECT DISTINCT stock_id FROM stock_daily")
         db_stock_ids = set(row[0] for row in cursor.fetchall())
-        missing_stock_ids = set(stock_ids) - db_stock_ids
+        missing_stock_ids = set(active_stock_ids) - db_stock_ids
 
         print(f"資料庫中缺少 {len(missing_stock_ids)} 檔股票")
         stock_info = df.set_index("stock_id")[["stock_name", "type"]].to_dict("index")

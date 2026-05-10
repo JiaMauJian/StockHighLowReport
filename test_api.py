@@ -1,56 +1,29 @@
 import os
-import requests
-import pandas as pd
+from datetime import datetime
 from dotenv import load_dotenv
 from FinMind.data import DataLoader
 
 load_dotenv()
+token = os.environ.get("FINMIND_TOKEN")
 
 api = DataLoader()
-api.login_by_token(api_token=os.environ["FINMIND_TOKEN"])
+api.login_by_token(api_token=token)
 
-# ── 個股 ──────────────────────────────────────────────────────
-df = api.taiwan_stock_daily(
-    stock_id="2330",
-    start_date="2024-01-01",
-    end_date="2024-12-31",
-)
-print("=== 台積電 (2330) ===")
-print(df.head())
-print(f"共 {len(df)} 筆\n")
+today = datetime.today().strftime("%Y-%m-%d")
+print(f"今天日期：{today}")
 
-# ── 大盤指數 ──────────────────────────────────────────────────
-df_taiex = api.taiwan_stock_daily(
-    stock_id="TAIEX",
-    start_date="2024-01-01",
-    end_date="2024-12-31",
-)
-print("=== 加權指數 (TAIEX) ===")
-print(df_taiex.head())
-print(f"共 {len(df_taiex)} 筆\n")
+df_check = api.taiwan_stock_daily(start_date=today)
+print(f"API 回傳總筆數：{len(df_check)}")
+if not df_check.empty:
+    print(f"日期範圍：{df_check['date'].min()} ~ {df_check['date'].max()}")
+    print(f"含有的 stock_id 樣本：{df_check['stock_id'].unique()[:20]}")
 
-# ── 上櫃指數 ──────────────────────────────────────────────────
-df_tpex = api.taiwan_stock_daily(
-    stock_id="TPEx",
-    start_date="2024-01-01",
-    end_date="2024-12-31",
-)
-print("=== 上櫃指數 (TPEx) ===")
-print(df_tpex.head())
-print(f"共 {len(df_tpex)} 筆")
-
-# ── requests 直接呼叫 API ─────────────────────────────────────
-token = os.environ["FINMIND_TOKEN"]
-url = "https://api.finmindtrade.com/api/v4/data"
-headers = {"Authorization": f"Bearer {token}"}
-
-parameter = {
-    "dataset": "TaiwanStockWeekPrice",
-    "data_id": "6103",
-    "start_date": "2023-05-15",
-    "end_date": "2023-05-29",
-}
-resp = requests.get(url, headers=headers, params=parameter)
-df_week = pd.DataFrame(resp.json()["data"])
-print("=== 週K (6103) ===")
-print(df_week.head())
+today_check = df_check[df_check["date"] == today] if not df_check.empty else df_check
+print(f"\n今天 ({today}) 的筆數：{len(today_check)}")
+if not today_check.empty:
+    print(f"'TPEx' 是否在今天資料中：{'TPEx' in today_check['stock_id'].values}")
+    print(f"'TAIEX' 是否在今天資料中：{'TAIEX' in today_check['stock_id'].values}")
+    print(f"'9962' 是否在今天資料中：{'9962' in today_check['stock_id'].values}")
+    print(f"今天不重複股票數：{today_check['stock_id'].nunique()}")
+else:
+    print("今天無資料")

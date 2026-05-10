@@ -28,7 +28,8 @@ def update_daily_data_from_last_date(token: str, db_path: str = 'stock.db'):
     try:
         # 先確認今日上櫃資料是否出來，若未出來則略過整個更新
         df_check = api.taiwan_stock_daily(start_date=today)
-        if not df_check.empty and "TPEx" not in df_check["stock_id"].values:
+        today_check = df_check[df_check["date"] == today] if not df_check.empty else df_check
+        if today_check.empty or "9962" not in today_check["stock_id"].values:
             print(f"今日 {today} 上櫃資料尚未出來，略過更新")
             return
 

@@ -77,6 +77,7 @@ def _load_from_turso(start_date: str) -> tuple:
 
 
 def _load_margin(api, start_date: str, end_date: str) -> pd.DataFrame:
+    # FinMind 的「大盤融資維持率」計算條件僅包含上市個股資料
     df = api.taiwan_total_exchange_margin_maintenance(
         start_date=start_date, end_date=end_date
     )
