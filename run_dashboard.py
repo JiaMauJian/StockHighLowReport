@@ -1,12 +1,11 @@
 import os
 import webbrowser
-from datetime import datetime, date
+import json
+from datetime import date
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import requests
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from FinMind.data import DataLoader
 from dotenv import load_dotenv
 
@@ -133,83 +132,6 @@ def _fetch_monthly_macd(api, stock_id: str) -> pd.DataFrame:
     return df
 
 
-def _build_macd_fig(df: pd.DataFrame, title: str, default_start: str = None) -> go.Figure:
-    fig = make_subplots(
-        rows=3, cols=1,
-        shared_xaxes=True,
-        row_heights=[0.5, 0.25, 0.25],
-        subplot_titles=[
-            f"{title} K線",
-            f"{title} MACD (H+L+2C)/4（三竹/玩股）",
-            f"{title} MACD close（鉅亨）",
-        ],
-        vertical_spacing=0.09,
-    )
-    fig.add_trace(
-        go.Candlestick(
-            x=df["date"],
-            open=df["open"], high=df["max"], low=df["min"], close=df["close"],
-            name=title,
-            increasing_line_color="red",
-            decreasing_line_color="green",
-        ),
-        row=1, col=1,
-    )
-    for row, suffix, label in [(2, "w", "(H+L+2C)/4"), (3, "c", "close")]:
-        colors = ["red" if v >= 0 else "green" for v in df[f"hist_{suffix}"]]
-        fig.add_trace(
-            go.Bar(x=df["date"], y=df[f"hist_{suffix}"],
-                name=f"OSC {label}", marker_color=colors, opacity=0.5,
-                hovertemplate="OSC : %{y:.2f}<extra></extra>"),
-            row=row, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=df["date"], y=df[f"macd_{suffix}"],
-                    name=f"DIF {label}", line=dict(color="blue", width=1),
-                    hovertemplate="DIF : %{y:.2f}<extra></extra>"),
-            row=row, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=df["date"], y=df[f"signal_{suffix}"],
-                    name=f"MACD9 {label}", line=dict(color="orange", width=1),
-                    hovertemplate="MACD9 : %{y:.2f}<extra></extra>"),
-            row=row, col=1,
-        )
-    start_ym = (
-        default_start[:7]
-        if default_start
-        else (date.today() - relativedelta(years=3, months=1)).strftime("%Y-%m")
-    )
-    end_ym   = (date.today() + relativedelta(months=2)).strftime("%Y-%m")
-    fig.update_layout(
-        height=1200,
-        autosize=True,
-        template="plotly_white",
-        showlegend=False,
-        hoverlabel=dict(font_size=13),
-        hovermode="x unified",
-        xaxis_rangeslider_visible=False,
-        xaxis2_rangeslider_visible=False,
-        xaxis3_rangeslider_visible=False,
-    )
-    fig.update_xaxes(
-        range=[start_ym, end_ym],
-        showticklabels=True,
-        tickformat="%Y-%m",
-        showspikes=True,
-        spikesnap="cursor",
-        spikemode="across",
-        spikethickness=1,
-        spikecolor="#888",
-        spikedash="dot",
-    )
-    #fig.update_traces(xhoverformat="%Y-%m")
-    return fig
-
-
-ALL_PLOT_IDS = ["plot-low", "plot-high", "plot-margin", "plot-cnn", "plot-macd-taiex", "plot-macd-tpex"]
-
-
 def _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd) -> str:
     """產生頂部 summary bar HTML。"""
 
@@ -282,103 +204,84 @@ def _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tp
     return f'<div class="summary-bar">{cards}</div>'
 
 
-def _build_main_chart(title: str, holidays: list, default_start: str, end_date: str, height: int = 400) -> go.Figure:
-    """建立單張主圖（secondary_y）共用版型。"""
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.update_layout(
-        title_text=title,
-        height=height,
-        template="plotly_white",
-        hoverlabel=dict(font_size=13),
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=50, b=30, l=55, r=55),
-    )
-    fig.update_xaxes(
-        range=[default_start, end_date],
-        rangeslider=dict(visible=False),
-        showticklabels=True,
-        showline=True, linecolor="#444", mirror=True,
-        rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=holidays)],
-        tickformat="%Y-%m-%d",
-        showspikes=True, spikesnap="cursor", spikemode="across",
-        spikethickness=1, spikecolor="#888", spikedash="dot",
-    )
-    fig.update_yaxes(showline=True, linecolor="#444", mirror=True)
-    fig.update_layout(bargap=0)
-    return fig
+def _date_str(value) -> str:
+    return pd.to_datetime(value).strftime("%Y-%m-%d")
 
 
-def _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
-                      df_taiex_macd, df_tpex_macd,
-                      holidays, default_start, end_date):
-    """建立六張圖，回傳 list[go.Figure]，順序對應 ALL_PLOT_IDS。"""
+def _month_str(value) -> str:
+    return f"{str(value)[:7]}-01"
 
-    # ── 圖1：60日新低 ─────────────────────────────────────────
-    fig_low = _build_main_chart(f"股價創{DAYS}日新低比例", holidays, default_start, end_date)
-    fig_low.add_trace(
-        go.Bar(x=df_hl["date"], y=df_hl["low_ratio"],
-               name=f"{DAYS}日新低(%)", marker_color="red", opacity=0.8),
-    )
-    fig_low.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black"), mode="lines", showlegend=False),
-        secondary_y=True,
-    )
-    fig_low.update_yaxes(title_text="比例 (%)", range=[0, 100], secondary_y=False)
-    fig_low.update_yaxes(title_text="TAIEX", secondary_y=True)
-    fig_low.update_traces(xhoverformat="%Y-%m-%d")
 
-    # ── 圖2：60日新高 ─────────────────────────────────────────
-    fig_high = _build_main_chart(f"股價創{DAYS}日新高比例", holidays, default_start, end_date)
-    fig_high.add_trace(
-        go.Bar(x=df_hl["date"], y=df_hl["high_ratio"],
-               name=f"{DAYS}日新高(%)", marker_color="green", opacity=0.8),
-    )
-    fig_high.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black"), mode="lines", showlegend=False),
-        secondary_y=True,
-    )
-    fig_high.update_yaxes(title_text="比例 (%)", range=[0, 100], secondary_y=False)
-    fig_high.update_yaxes(title_text="TAIEX", secondary_y=True)
-    fig_high.update_traces(xhoverformat="%Y-%m-%d")
+def _month_ms(value) -> int:
+    return int(pd.Timestamp(_month_str(value)).timestamp() * 1000)
 
-    # ── 圖3：融資維持率 ───────────────────────────────────────
-    fig_margin = _build_main_chart("TAIEX vs 融資維持率", holidays, default_start, end_date)
-    fig_margin.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black"), mode="lines"),
-    )
-    fig_margin.add_trace(
-        go.Scatter(x=df_margin["date"], y=df_margin["TotalExchangeMarginMaintenance"],
-                   name="融資維持率", line=dict(color="red"), mode="lines"),
-        secondary_y=True,
-    )
-    fig_margin.update_yaxes(title_text="TAIEX", secondary_y=False)
-    fig_margin.update_yaxes(title_text="融資維持率", secondary_y=True)
-    fig_margin.update_traces(xhoverformat="%Y-%m-%d")
 
-    # ── 圖4：CNN Fear/Greed ───────────────────────────────────
-    fig_cnn = _build_main_chart("TAIEX vs CNN Fear/Greed", holidays, default_start, end_date)
-    fig_cnn.add_trace(
-        go.Scatter(x=df_taiex["date"], y=df_taiex["close"],
-                   name="TAIEX", line=dict(color="black"), mode="lines"),
-    )
-    fig_cnn.add_trace(
-        go.Scatter(x=df_cnn["date"], y=df_cnn["fear_greed"],
-                   name="CNN Fear/Greed", line=dict(color="orange"), mode="lines"),
-        secondary_y=True,
-    )
-    fig_cnn.update_yaxes(title_text="TAIEX", secondary_y=False)
-    fig_cnn.update_yaxes(title_text="Fear/Greed", range=[0, 100], secondary_y=True)
-    fig_cnn.update_traces(xhoverformat="%Y-%m-%d")
+def _series_points(df: pd.DataFrame, value_col: str) -> list:
+    return [
+        {"x": _date_str(row["date"]), "y": None if pd.isna(row[value_col]) else float(row[value_col])}
+        for _, row in df.sort_values("date").iterrows()
+    ]
 
-    # ── 圖5、6：月MACD ────────────────────────────────────────
-    fig_taiex_macd = _build_macd_fig(df_taiex_macd, "TAIEX 上市", default_start)
-    fig_tpex_macd  = _build_macd_fig(df_tpex_macd,  "TPEx 上櫃",  default_start)
 
-    return [fig_low, fig_high, fig_margin, fig_cnn, fig_taiex_macd, fig_tpex_macd]
+def _macd_payload(df: pd.DataFrame) -> dict:
+    df = df.sort_values("date").reset_index(drop=True)
+    candles = [
+        {
+            "x": _month_ms(row["date"]),
+            "t": _month_str(row["date"]),
+            "o": float(row["open"]),
+            "h": float(row["max"]),
+            "l": float(row["min"]),
+            "c": float(row["close"]),
+        }
+        for _, row in df.iterrows()
+    ]
+
+    def macd_series(suffix: str) -> dict:
+        return {
+            "hist": [
+                {"x": _month_str(row["date"]), "y": float(row[f"hist_{suffix}"])}
+                for _, row in df.iterrows()
+            ],
+            "dif": [
+                {"x": _month_str(row["date"]), "y": float(row[f"macd_{suffix}"])}
+                for _, row in df.iterrows()
+            ],
+            "signal": [
+                {"x": _month_str(row["date"]), "y": float(row[f"signal_{suffix}"])}
+                for _, row in df.iterrows()
+            ],
+        }
+
+    return {"candles": candles, "weighted": macd_series("w"), "close": macd_series("c")}
+
+
+def _build_dashboard_payload(df_hl, df_taiex, df_margin, df_cnn,
+                             df_taiex_macd, df_tpex_macd,
+                             default_start, end_date) -> dict:
+    return {
+        "meta": {
+            "days": DAYS,
+            "defaultStart": default_start,
+            "endDate": end_date,
+            "generatedAt": datetime_now_taipei(),
+        },
+        "series": {
+            "taiex": _series_points(df_taiex, "close"),
+            "lowRatio": _series_points(df_hl, "low_ratio"),
+            "highRatio": _series_points(df_hl, "high_ratio"),
+            "margin": _series_points(df_margin, "TotalExchangeMarginMaintenance"),
+            "cnn": _series_points(df_cnn, "fear_greed"),
+        },
+        "macd": {
+            "taiex": _macd_payload(df_taiex_macd),
+            "tpex": _macd_payload(df_tpex_macd),
+        },
+    }
+
+
+def datetime_now_taipei() -> str:
+    return pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d %H:%M")
 
 
 def run_dashboard():
@@ -413,15 +316,13 @@ def run_dashboard():
     df_margin = df_margin[df_margin["date"].isin(taiex_dates)].reset_index(drop=True)
     df_cnn    = df_cnn[df_cnn["date"].isin(taiex_dates)].reset_index(drop=True)
 
-    # 從 TAIEX 交易日推算出需要跳過的非交易日（假日）
-    all_days = pd.date_range(start=df_taiex["date"].min(), end=df_taiex["date"].max(), freq="D")
-    holidays = [d.strftime("%Y-%m-%d") for d in all_days if d not in set(df_taiex["date"])]
-
-    figs = _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
-                              df_taiex_macd, df_tpex_macd,
-                              holidays, default_start, end_date)
+    payload = _build_dashboard_payload(
+        df_hl, df_taiex, df_margin, df_cnn,
+        df_taiex_macd, df_tpex_macd,
+        default_start, end_date,
+    )
     summary = _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd)
-    _write_html(figs, end_date, summary)
+    _write_html(payload, end_date, summary)
 
 
 def _load_market_temp_html() -> str:
@@ -540,244 +441,611 @@ def _load_events_html() -> str:
 
 
 
-def _write_html(figs: list, end_date: str, summary_html: str = ""):
-    # 第一張圖帶入 plotlyjs CDN，其餘不重複載入
-    divs = []
-    for i, (fig, pid) in enumerate(zip(figs, ALL_PLOT_IDS)):
-        divs.append(fig.to_html(
-            full_html=False,
-            include_plotlyjs="cdn" if i == 0 else False,
-            div_id=pid,
-        ))
-
-    d0, d1, d2, d3, d4, d5 = divs
-
+def _write_html(payload: dict, end_date: str, summary_html: str = ""):
+    payload_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     html = f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>股市 Dashboard</title>
+  <title>台股市場監控台</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
   <style>
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: #fff; font-family: sans-serif; }}
-    .container {{ max-width: 1600px; margin: 0 auto; padding: 16px 20px 40px; }}
-    .summary-bar {{
-      display: flex; flex-wrap: wrap; gap: 0;
-      background: #f8f9fb; border: 1px solid #e2e8f0;
-      border-radius: 8px; padding: 10px 8px; margin-bottom: 14px;
+    :root {{
+      --bg: #eef2f5;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --ink: #141821;
+      --muted: #667085;
+      --line: #d7dde5;
+      --blue: #2463eb;
+      --red: #d9283a;
+      --green: #12805c;
+      --amber: #c77700;
+      --shadow: 0 18px 45px rgba(24, 33, 45, 0.10);
     }}
-    .sc {{ flex:1; min-width:110px; padding:4px 16px; border-right:1px solid #dde3ed; }}
-    .sc:last-child {{ border-right: none; }}
-    .sc-label  {{ font-size:13px; color:#666; margin-bottom:2px; white-space:nowrap; }}
-    .sc-value  {{ font-size:26px; font-weight:700; color:#222; line-height:1.2; }}
-    .s-delta   {{ font-size:13px; margin-top:2px; display:block; }}
-    .s-delta.up {{ color:#16a34a; }}
-    .s-delta.dn {{ color:#dc2626; }}
-    .s-delta.neutral {{ color:#888; }}
-
-    /* ── Tab 導覽 ── */
+    body {{
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(19, 24, 33, 0.06), transparent 260px),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Aptos", "Segoe UI", "Noto Sans TC", sans-serif;
+    }}
+    .container {{ max-width: 1680px; margin: 0 auto; padding: 18px 18px 42px; }}
+    .topline {{
+      display: flex; align-items: end; justify-content: space-between;
+      gap: 16px; margin-bottom: 14px;
+    }}
+    .brand-kicker {{
+      color: var(--blue); font-size: 12px; font-weight: 800;
+      letter-spacing: 0.14em; text-transform: uppercase;
+    }}
+    h1 {{ margin: 2px 0 0; font-size: 28px; line-height: 1.15; }}
+    .asof {{ color: var(--muted); font-size: 13px; text-align: right; }}
+    .summary-bar {{
+      display: grid;
+      grid-template-columns: repeat(8, minmax(128px, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }}
+    .sc {{
+      min-width: 0; background: var(--panel);
+      padding: 12px 14px 11px;
+    }}
+    .sc-label  {{ font-size: 12px; color: var(--muted); margin-bottom: 5px; white-space: nowrap; }}
+    .sc-value  {{ font-size: 23px; font-weight: 850; color: var(--ink); line-height: 1.05; }}
+    .s-delta   {{ font-size: 12px; margin-top: 5px; display: block; font-weight: 750; }}
+    .s-delta.up {{ color: var(--green); }}
+    .s-delta.dn {{ color: var(--red); }}
+    .s-delta.neutral {{ color: var(--muted); }}
     .tab-nav {{
-      display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px;
-      border-bottom: 2px solid #e2e8f0; padding-bottom: 0;
+      display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 12px;
     }}
     .tab-btn {{
-      padding: 10px 24px; font-size: 15px; font-weight: 600;
-      border: none; border-radius: 8px 8px 0 0;
-      background: transparent; color: #888;
-      cursor: pointer; transition: all 0.15s;
-      border-bottom: 3px solid transparent; margin-bottom: -2px;
+      min-height: 36px; padding: 0 15px; font-size: 14px; font-weight: 800;
+      border: 1px solid var(--line); border-radius: 8px;
+      background: rgba(255,255,255,0.7); color: var(--muted);
+      cursor: pointer; transition: transform 0.15s, background 0.15s, color 0.15s;
     }}
-    .tab-btn:hover {{ color: #2979c8; background: #f0f6ff; }}
-    .tab-btn.active {{ color: #2979c8; border-bottom-color: #2979c8; background: #f0f6ff; }}
-
-    /* ── Tab 內容 ── */
+    .tab-btn:hover {{ transform: translateY(-1px); color: var(--ink); background: #fff; }}
+    .tab-btn.active {{ color: #fff; border-color: #172033; background: #172033; }}
     .tab-content {{ display: none; }}
     .tab-content.active {{ display: block; }}
-
-    /* ── 圖表 tab 工具列 ── */
-    .btn-group {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }}
-    .btn-group button {{
-      padding:8px 20px; font-size:15px; border:2px solid #2979c8;
-      border-radius:20px; background:#fff; color:#2979c8;
-      cursor:pointer; transition:all 0.15s; font-weight:500;
+    .toolbar {{
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+      padding: 8px 10px; border: 1px solid var(--line);
+      border-radius: 8px; background: rgba(248,250,253,0.86);
     }}
-    .btn-group button:hover {{ background:#e8f0fb; }}
-    .btn-group button.active {{ background:#2979c8; color:#fff; }}
-    .col-btn {{
-      padding:8px 14px; font-size:15px; border:2px solid #888;
-      border-radius:20px; background:#fff; color:#555;
-      cursor:pointer; transition:all 0.15s; font-weight:500;
+    .tool-section {{ display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }}
+    .tool-label {{
+      color: var(--muted); font-size: 11px; font-weight: 900;
+      letter-spacing: 0.12em; text-transform: uppercase; margin-right: 6px;
     }}
-    .col-btn:hover {{ background:#f0f0f0; }}
-    .col-btn.active {{ background:#555; color:#fff; border-color:#555; }}
-    .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:0px 12px; }}
+    .tool-btn {{
+      min-height: 30px; padding: 0 12px; border-radius: 7px;
+      border: 1px solid var(--line); background: #fff; color: var(--ink);
+      cursor: pointer; font-size: 13px; font-weight: 800;
+    }}
+    .tool-btn:hover {{ border-color: #9aa8ba; }}
+    .tool-btn.active {{ background: var(--blue); border-color: var(--blue); color: #fff; }}
+    .grid {{ display:grid; grid-template-columns:1fr 1fr; gap: 12px; align-items: start; }}
     .grid.one-col {{ grid-template-columns:1fr; }}
-    @media (max-width: 1024px) {{ .grid {{ grid-template-columns:1fr !important; }} }}
+    .chart-panel {{
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 8px; box-shadow: var(--shadow); overflow: hidden;
+    }}
+    .chart-head {{
+      display: flex; justify-content: space-between; gap: 12px;
+      padding: 12px 14px 8px; border-bottom: 1px solid #edf0f4;
+    }}
+    .chart-title {{ margin: 0; font-size: 15px; font-weight: 900; }}
+    .chart-subtitle {{ margin-top: 3px; color: var(--muted); font-size: 12px; }}
+    .chart-badge {{
+      height: 24px; padding: 4px 8px; border-radius: 999px;
+      background: var(--panel-2); color: var(--muted);
+      font-size: 11px; font-weight: 850; white-space: nowrap;
+    }}
+    .chart-wrap {{ height: 360px; padding: 10px 12px 14px; }}
+    .chart-node {{ width: 100%; height: 100%; }}
+    .macd-stack {{ padding: 10px 12px 14px; }}
+    .macd-price {{ height: 370px; }}
+    .macd-sub {{ height: 185px; margin-top: 8px; }}
+    .empty-state {{ color: var(--muted); padding: 48px 20px; text-align: center; }}
+    @media (max-width: 1180px) {{
+      .summary-bar {{ grid-template-columns: repeat(4, minmax(120px, 1fr)); }}
+      .grid {{ grid-template-columns:1fr !important; }}
+    }}
     @media (max-width: 600px) {{
-      .sc {{ flex: 0 0 calc(50% - 2px); min-width: 0; }}
-      .sc-value {{ font-size: 20px; }}
-      .tab-btn {{ padding: 8px 12px; font-size: 13px; }}
-      .btn-group button {{ padding: 6px 14px; font-size: 13px; }}
-      .container {{ padding: 10px 12px 32px; }}
+      .container {{ padding: 12px 10px 30px; }}
+      .topline {{ display: block; }}
+      .asof {{ text-align: left; margin-top: 6px; }}
+      .summary-bar {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .sc {{ padding: 10px; }}
+      .sc-value {{ font-size: 19px; }}
+      .chart-wrap {{ height: 310px; }}
+      .macd-price {{ height: 330px; }}
+      .macd-sub {{ height: 170px; }}
     }}
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="topline">
+      <div>
+        <div class="brand-kicker">Taiwan Market Console</div>
+        <h1>台股市場監控台</h1>
+      </div>
+      <div class="asof">資料日期 {end_date}<br>產生時間 {payload["meta"]["generatedAt"]}</div>
+    </div>
     {summary_html}
 
-    <!-- Tab 導覽 -->
     <div class="tab-nav">
-      <button class="tab-btn active" onclick="showTab('charts', this)">📊 圖表</button>
-      <button class="tab-btn"        onclick="showTab('events', this)">📅 歷史事件</button>
-      <button class="tab-btn"        onclick="showTab('cycles', this)">📈 景氣循環</button>
+      <button class="tab-btn active" onclick="showTab('charts', this)">圖表</button>
+      <button class="tab-btn" onclick="showTab('events', this)">歷史事件</button>
+      <button class="tab-btn" onclick="showTab('cycles', this)">景氣循環</button>
     </div>
 
-    <!-- 圖表 tab -->
     <div id="tab-charts" class="tab-content active">
-      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
-      <div class="btn-group" style="margin-bottom:0;">
-        <button onclick="setRange(0.5, this)" class="active">半年</button>
-        <button onclick="setRange(1,   this)">1 年</button>
-        <button onclick="setRange(3,   this)">3 年</button>
-        <button onclick="setRange(5,   this)">5 年</button>
-        <button onclick="setRange(10,  this)">10 年</button>
-        <button onclick="setAll(this)">全部</button>
-      </div>
-      <div style="display:flex; gap:6px;">
-        <button class="col-btn active" onclick="setCols(2, this)">▦ 2欄</button>
-        <button class="col-btn"        onclick="setCols(1, this)">▤ 1欄</button>
-      </div>
+      <div class="toolbar">
+        <div class="tool-section" id="range-tools">
+          <span class="tool-label">Range</span>
+          <button class="tool-btn range-btn active" data-range="0.5" onclick="setRange(0.5, this)">半年</button>
+          <button class="tool-btn range-btn" data-range="1" onclick="setRange(1, this)">1 年</button>
+          <button class="tool-btn range-btn" data-range="3" onclick="setRange(3, this)">3 年</button>
+          <button class="tool-btn range-btn" data-range="5" onclick="setRange(5, this)">5 年</button>
+          <button class="tool-btn range-btn" data-range="10" onclick="setRange(10, this)">10 年</button>
+          <button class="tool-btn range-btn" data-range="all" onclick="setAll(this)">全部</button>
+          <button class="tool-btn" onclick="resetZoomAll()">Reset</button>
+        </div>
+        <div class="tool-section" id="column-tools">
+          <span class="tool-label">Layout</span>
+          <button class="tool-btn layout-btn active" onclick="setCols(2, this)">2 欄</button>
+          <button class="tool-btn layout-btn" onclick="setCols(1, this)">1 欄</button>
+        </div>
       </div>
       <div class="grid" id="main-grid">
-        <div>{d0}</div>
-        <div>{d1}</div>
-        <div>{d2}</div>
-        <div>{d3}</div>
-        <div>{d4}</div>
-        <div>{d5}</div>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">股價創{DAYS}日新低比例</h2><div class="chart-subtitle">新低比例與 TAIEX 收盤價</div></div><div class="chart-badge">Breadth Risk</div></div>
+          <div class="chart-wrap"><div class="chart-node" id="chart-low"></div></div>
+        </section>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">股價創{DAYS}日新高比例</h2><div class="chart-subtitle">新高比例與 TAIEX 收盤價</div></div><div class="chart-badge">Market Thrust</div></div>
+          <div class="chart-wrap"><div class="chart-node" id="chart-high"></div></div>
+        </section>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">TAIEX vs 融資維持率</h2><div class="chart-subtitle">大盤與槓桿壓力監控</div></div><div class="chart-badge">Margin</div></div>
+          <div class="chart-wrap"><div class="chart-node" id="chart-margin"></div></div>
+        </section>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">TAIEX vs CNN Fear/Greed</h2><div class="chart-subtitle">大盤與海外情緒指標</div></div><div class="chart-badge">Sentiment</div></div>
+          <div class="chart-wrap"><div class="chart-node" id="chart-cnn"></div></div>
+        </section>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">TAIEX 上市月 MACD</h2><div class="chart-subtitle">月 K、加權價 MACD、收盤價 MACD</div></div><div class="chart-badge">Monthly</div></div>
+          <div class="macd-stack">
+            <div class="macd-price"><div class="chart-node" id="chart-macd-taiex-price"></div></div>
+            <div class="macd-sub"><div class="chart-node" id="chart-macd-taiex-weighted"></div></div>
+            <div class="macd-sub"><div class="chart-node" id="chart-macd-taiex-close"></div></div>
+          </div>
+        </section>
+        <section class="chart-panel">
+          <div class="chart-head"><div><h2 class="chart-title">TPEx 上櫃月 MACD</h2><div class="chart-subtitle">月 K、加權價 MACD、收盤價 MACD</div></div><div class="chart-badge">Monthly</div></div>
+          <div class="macd-stack">
+            <div class="macd-price"><div class="chart-node" id="chart-macd-tpex-price"></div></div>
+            <div class="macd-sub"><div class="chart-node" id="chart-macd-tpex-weighted"></div></div>
+            <div class="macd-sub"><div class="chart-node" id="chart-macd-tpex-close"></div></div>
+          </div>
+        </section>
       </div>
     </div>
 
-    <!-- 歷史事件 tab -->
     <div id="tab-events" class="tab-content">
-      <div id="events-content" class="md-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
+      <div id="events-content" class="md-content empty-state">載入中...</div>
     </div>
 
-    <!-- 景氣循環 tab -->
     <div id="tab-cycles" class="tab-content">
-      <div id="cycles-content" class="md-content" style="text-align:center; padding:40px; color:#aaa;">載入中...</div>
+      <div id="cycles-content" class="md-content empty-state">載入中...</div>
     </div>
   </div>
 
   <script>
-    const ALL_PLOTS  = {str(ALL_PLOT_IDS).replace("'", '"')};
-    const MAIN_PLOTS = ["plot-low", "plot-high", "plot-margin", "plot-cnn"];
-    const MACD_PLOTS = ["plot-macd-taiex", "plot-macd-tpex"];
+    const DASHBOARD_DATA = {payload_json};
+    const charts = {{}};
+    const chartIds = [];
+    const activeRange = {{ min: DASHBOARD_DATA.meta.defaultStart, max: DASHBOARD_DATA.meta.endDate }};
+    const palette = {{
+      ink: '#151a24', muted: '#60708a', grid: '#dde5ef', border: '#cfd8e3',
+      red: '#e43f52', redSoft: 'rgba(228, 63, 82, 0.42)', green: '#15906f',
+      greenSoft: 'rgba(21, 144, 111, 0.38)', blue: '#2563eb', amber: '#d97706'
+    }};
 
-    function showTab(name, btn) {{
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById('tab-' + name).classList.add('active');
-      btn.classList.add('active');
-      if (name === 'charts') {{
-        ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
-      }} else if (name === 'events') {{
-        loadEvents();
-      }} else if (name === 'cycles') {{
-        loadCycles();
-      }}
+    function showTab(name, button) {{
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.getElementById(`tab-${{name}}`).classList.add('active');
+      setTimeout(resizeCharts, 40);
     }}
 
-    // ── 歷史事件：fetch MD → marked.js 渲染 ─────────────────
-    async function loadEvents() {{
-      const el = document.getElementById('events-content');
-      if (el.dataset.loaded) return;
-      try {{
-        const resp = await fetch('taiwan_market_events.md');
-        if (!resp.ok) throw new Error('not found');
-        const text = await resp.text();
-        marked.setOptions({{ gfm: true, breaks: true }});
-        el.innerHTML = marked.parse(text);
-        el.dataset.loaded = '1';
-      }} catch(e) {{
-        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
-          <div style="font-size:48px; margin-bottom:16px;">📅</div>
-          <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_events.md</div>
-        </div>`;
-      }}
+    function loadEvents() {{
+      const tbody = document.getElementById('events-body');
+      if (!tbody || !DASHBOARD_DATA.events?.length) return;
+      tbody.innerHTML = DASHBOARD_DATA.events.map(row => `<tr><td>${{row.Date}}</td><td>${{row.Event}}</td><td>${{row.TAIEX}}</td><td>${{row.New_Low_Ratio}}</td><td>${{row.New_High_Ratio}}</td><td>${{row.Margin_Maintenance}}</td><td>${{row.CNN_Fear_Greed}}</td></tr>`).join('');
     }}
 
-    async function loadCycles() {{
-      const el = document.getElementById('cycles-content');
-      if (el.dataset.loaded) return;
-      try {{
-        const resp = await fetch('taiwan_market_cycles.md');
-        if (!resp.ok) throw new Error('not found');
-        const text = await resp.text();
-        marked.setOptions({{ gfm: true, breaks: true }});
-        el.innerHTML = marked.parse(text);
-        el.dataset.loaded = '1';
-      }} catch(e) {{
-        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
-          <div style="font-size:48px; margin-bottom:16px;">📈</div>
-          <div style="font-size:18px; font-weight:600;">找不到 taiwan_market_cycles.md</div>
-        </div>`;
-      }}
+    function loadCycles() {{
+      const tbody = document.getElementById('cycles-body');
+      if (!tbody || !DASHBOARD_DATA.cycles?.length) return;
+      tbody.innerHTML = DASHBOARD_DATA.cycles.map(row => `<tr><td>${{row.start_date}}</td><td>${{row.end_date}}</td><td>${{row.days}}</td><td>${{row.trading_days}}</td><td>${{row.start_value}}</td><td>${{row.end_value}}</td><td>${{row.trough_value}}</td><td>${{row.max_drawdown_pct}}</td></tr>`).join('');
     }}
 
-
-    function resetAxes(id) {{
-      const el = document.getElementById(id);
-      const btn = el.querySelector('.modebar-btn[data-title="Reset axes"]');
-      if (btn) btn.click();
-      return el;
+    function initChart(id) {{
+      const node = document.getElementById(id);
+      if (!node) return;
+      const chart = echarts.init(node, null, {{ renderer: 'canvas' }});
+      charts[id] = chart;
+      chartIds.push(id);
     }}
 
-    function setRange(years, btn) {{
-      btn.closest('.btn-group').querySelectorAll('button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const end = new Date('{end_date}');
-      end.setDate(end.getDate() + 1);
+    function resizeCharts() {{
+      chartIds.forEach(id => charts[id]?.resize());
+    }}
+
+    function updateRangeButtons(activeButton) {{
+      document.querySelectorAll('.range-btn').forEach(btn => btn.classList.remove('active'));
+      if (activeButton) activeButton.classList.add('active');
+    }}
+
+    function formatDate(d) {{
+      return d.toISOString().slice(0, 10);
+    }}
+
+    function setRange(years, button) {{
+      const end = new Date(`${{DASHBOARD_DATA.meta.endDate}}T00:00:00`);
       const start = new Date(end);
-      const months = Math.round(years * 12);
-      start.setMonth(start.getMonth() - months);
-      const fmt = d => d.toISOString().split('T')[0];
-      MAIN_PLOTS.forEach(id => {{
-        const el = resetAxes(id);
-        Plotly.relayout(el, {{'xaxis.autorange': false, 'xaxis.range': [fmt(start), fmt(end)]}});
-      }});
-      MACD_PLOTS.forEach(id => {{
-        Plotly.relayout(document.getElementById(id), {{'xaxis.autorange': false, 'xaxis.range': [fmt(start), fmt(end)]}});
+      start.setMonth(start.getMonth() - Math.round(years * 12));
+      activeRange.min = formatDate(start);
+      activeRange.max = DASHBOARD_DATA.meta.endDate;
+      updateRangeButtons(button);
+      renderAllCharts();
+    }}
+
+    function setAll(button) {{
+      activeRange.min = null;
+      activeRange.max = null;
+      updateRangeButtons(button);
+      renderAllCharts();
+    }}
+
+    function resetZoomAll() {{
+      activeRange.min = DASHBOARD_DATA.meta.defaultStart;
+      activeRange.max = DASHBOARD_DATA.meta.endDate;
+      const half = document.querySelector('.range-btn[data-range="0.5"]');
+      updateRangeButtons(half);
+      renderAllCharts();
+    }}
+
+    function setCols(cols, button) {{
+      document.querySelectorAll('.layout-btn').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      document.querySelectorAll('.grid').forEach(grid => grid.classList.toggle('one-col', cols === 1));
+      setTimeout(resizeCharts, 80);
+    }}
+
+    function inRangeDate(dateText) {{
+      return (!activeRange.min || dateText >= activeRange.min) && (!activeRange.max || dateText <= activeRange.max);
+    }}
+
+    function filterPoints(points) {{
+      return (points || []).filter(p => inRangeDate(p.x));
+    }}
+
+    function monthKey(dateText) {{
+      return String(dateText || '').slice(0, 7);
+    }}
+
+    function filterMonthPoints(points) {{
+      const minMonth = activeRange.min ? monthKey(activeRange.min) : null;
+      const maxMonth = activeRange.max ? monthKey(activeRange.max) : null;
+      return (points || []).filter(p => {{
+        const key = monthKey(p.x);
+        return (!minMonth || key >= minMonth) && (!maxMonth || key <= maxMonth);
       }});
     }}
 
-    function setAll(btn) {{
-      btn.closest('.btn-group').querySelectorAll('button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      MAIN_PLOTS.forEach(id => {{
-        Plotly.relayout(document.getElementById(id), {{'xaxis.autorange': true}});
-      }});
-      MACD_PLOTS.forEach(id => {{
-        Plotly.relayout(document.getElementById(id), {{
-          'xaxis.autorange': true, 'yaxis.autorange': true,
-          'yaxis2.autorange': true, 'yaxis3.autorange': true
-        }});
+    function filterCandles(candles) {{
+      const minMonth = activeRange.min ? monthKey(activeRange.min) : null;
+      const maxMonth = activeRange.max ? monthKey(activeRange.max) : null;
+      return (candles || []).filter(c => {{
+        const key = monthKey(c.t || c.x);
+        return (!minMonth || key >= minMonth) && (!maxMonth || key <= maxMonth);
       }});
     }}
 
-    function setCols(n, btn) {{
-      btn.closest('div').querySelectorAll('.col-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const grid = document.getElementById('main-grid');
-      grid.classList.toggle('one-col', n === 1);
-      ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
+    function alignToLabels(points, labels) {{
+      const map = new Map((points || []).map(p => [p.x, p.y]));
+      return labels.map(label => map.has(label) ? map.get(label) : null);
     }}
 
-    window.addEventListener('resize', () => {{
-      ALL_PLOTS.forEach(id => Plotly.Plots.resize(document.getElementById(id)));
-    }});
+    function finiteValues(values) {{
+      return (values || []).filter(v => Number.isFinite(v));
+    }}
+
+    function yRange(values, padRatio = 0.08, floorZero = false) {{
+      const nums = finiteValues(values);
+      if (!nums.length) return {{ min: 0, max: 1 }};
+      let min = Math.min(...nums);
+      let max = Math.max(...nums);
+      const span = Math.max(max - min, Math.abs(max) * 0.02, 1);
+      min -= span * padRatio;
+      max += span * padRatio;
+      if (floorZero) min = Math.min(0, min);
+      return {{ min, max }};
+    }}
+
+    function monthTickInfo(labels) {{
+      const starts = [];
+      let last = '';
+      labels.forEach((label, index) => {{
+        const month = String(label).slice(0, 7);
+        if (month !== last) {{
+          starts.push(index);
+          last = month;
+        }}
+      }});
+      const months = starts.length;
+      const yearTicks = starts.filter(index => String(labels[index]).slice(5, 7) === '01');
+      const required = new Set([starts[0], ...yearTicks]);
+      let selected = starts;
+      if (months > 120) {{
+        selected = starts.filter(index => required.has(index));
+      }} else {{
+        const stride = months > 72 ? 6 : months > 36 ? 3 : 1;
+        selected = starts.filter((index, i) => required.has(index) || i % stride === 0);
+      }}
+      selected = selected.sort((a, b) => a - b);
+      return {{
+        ticks: new Set(selected),
+        first: selected.length ? selected[0] : 0
+      }};
+    }}
+
+    function monthAxisLabel(value, index, firstTick) {{
+      const text = String(value || '');
+      const year = text.slice(0, 4);
+      const month = text.slice(5, 7);
+      if (!year || !month) return text;
+      if (index === firstTick || month === '01') return `{{year|${{year}}}}`;
+      return month;
+    }}
+
+    function xAxis(labels, boundaryGap = false) {{
+      const tickInfo = monthTickInfo(labels);
+      return {{
+        type: 'category', data: labels, boundaryGap,
+        axisTick: {{ show: false }},
+        axisLine: {{ lineStyle: {{ color: '#b8c4d4' }} }},
+        axisLabel: {{
+          color: palette.muted,
+          margin: 9,
+          hideOverlap: true,
+          rich: {{
+            year: {{ fontWeight: 800, color: '#253656' }}
+          }},
+          interval: index => tickInfo.ticks.has(index),
+          formatter: (value, index) => monthAxisLabel(value, index, tickInfo.first)
+        }}
+      }};
+    }}
+
+    function formatTooltipValue(value, digits = 2) {{
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '-';
+      return num.toLocaleString(undefined, {{ minimumFractionDigits: digits, maximumFractionDigits: digits }});
+    }}
+
+    function candleTooltip(params) {{
+      const item = Array.isArray(params) ? params[0] : params;
+      const raw = Array.isArray(item?.data) ? item.data : (item?.value || []);
+      const values = raw.length >= 5 ? raw.slice(1, 5) : raw;
+      return `
+        <div style="font-weight:400; margin-bottom:6px;">${{item?.axisValue || ''}}</div>
+        <div>${{item?.marker || ''}}月 K</div>
+        <div>開 <span style="float:right; margin-left:18px;">${{formatTooltipValue(values[0], 1)}}</span></div>
+        <div>高 <span style="float:right; margin-left:18px;">${{formatTooltipValue(values[3], 1)}}</span></div>
+        <div>收 <span style="float:right; margin-left:18px;">${{formatTooltipValue(values[1], 1)}}</span></div>
+        <div>低 <span style="float:right; margin-left:18px;">${{formatTooltipValue(values[2], 1)}}</span></div>
+      `;
+    }}
+
+    function tooltipMarker(color) {{
+      return `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${{color}};margin-right:6px;"></span>`;
+    }}
+
+    function macdTooltip(params) {{
+      const rows = (Array.isArray(params) ? params : [params]).map(item => {{
+        const value = Array.isArray(item.value) ? item.value[item.value.length - 1] : item.value;
+        const color = item.seriesName === 'OSC'
+          ? (Number(value) >= 0 ? 'rgba(228,63,82,0.58)' : 'rgba(21,144,111,0.54)')
+          : (item.seriesName === 'DIF' ? '#245fff' : palette.amber);
+        return `
+        <div>${{tooltipMarker(color)}}${{item.seriesName}}
+          <span style="float:right; margin-left:18px;">${{formatTooltipValue(value, 3)}}</span>
+        </div>
+      `;
+      }}).join('');
+      return `<div style="font-weight:400; margin-bottom:6px;">${{params?.[0]?.axisValue || ''}}</div>${{rows}}`;
+    }}
+
+    function taiexFirstTooltip(params) {{
+      const items = Array.isArray(params) ? [...params] : [params];
+      items.sort((a, b) => (a.seriesName === 'TAIEX' ? -1 : 0) - (b.seriesName === 'TAIEX' ? -1 : 0));
+      const rows = items.map(item => `
+        <div>${{item.marker || ''}}${{item.seriesName}}
+          <span style="float:right; margin-left:18px;">${{formatTooltipValue(item.value, 2)}}</span>
+        </div>
+      `).join('');
+      return `<div style="font-weight:400; margin-bottom:6px;">${{items?.[0]?.axisValue || ''}}</div>${{rows}}`;
+    }}
+
+    function tooltip(formatter = null) {{
+      const options = {{
+        trigger: 'axis',
+        confine: true,
+        axisPointer: {{ type: 'cross', label: {{ show: false }} }},
+        backgroundColor: 'rgba(248, 250, 252, 0.98)',
+        borderColor: '#cbd5e1',
+        borderWidth: 1,
+        padding: [10, 12],
+        extraCssText: 'box-shadow:0 10px 24px rgba(15,23,42,.14); border-radius:6px;',
+        textStyle: {{ color: '#172033', fontSize: 12, fontWeight: 400 }}
+      }};
+      if (formatter) options.formatter = formatter;
+      return options;
+    }}
+
+    function xDataZoom() {{
+      return [{{
+        type: 'inside',
+        xAxisIndex: 0,
+        filterMode: 'none',
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: true
+      }}];
+    }}
+
+    function grid(top = 34, bottom = 32, right = 72) {{
+      return {{ left: 64, right, top, bottom, containLabel: false }};
+    }}
+
+    function valueAxis(name, range, position = 'left', split = true) {{
+      return {{
+        type: 'value', name, position,
+        min: range?.min, max: range?.max,
+        nameLocation: 'middle', nameGap: position === 'right' ? 48 : 42,
+        nameTextStyle: {{ color: '#4d5d75', fontWeight: 800 }},
+        axisLabel: {{ color: palette.muted, formatter: value => Number(value).toLocaleString(undefined, {{ maximumFractionDigits: 1 }}) }},
+        axisLine: {{ lineStyle: {{ color: '#b8c4d4' }} }},
+        axisTick: {{ show: false }},
+        splitLine: {{ show: split, lineStyle: {{ color: palette.grid }} }}
+      }};
+    }}
+
+    function renderMainChart(id, barLabel, barPoints, barColor, lineLabel, linePoints, leftTitle, rightTitle) {{
+      const visibleLine = filterPoints(linePoints);
+      const labels = visibleLine.map(p => p.x);
+      const bars = alignToLabels(filterPoints(barPoints), labels);
+      const line = visibleLine.map(p => p.y);
+      const right = yRange(line, 0.08, false);
+      charts[id]?.setOption({{
+        animation: false, color: [barColor, palette.ink], textStyle: {{ fontFamily: 'Aptos, Segoe UI, Noto Sans TC, sans-serif' }},
+        grid: grid(38, 34, 76), tooltip: tooltip(taiexFirstTooltip),
+        dataZoom: xDataZoom(),
+        legend: {{ top: 0, right: 0, itemWidth: 10, itemHeight: 10, textStyle: {{ color: palette.muted, fontWeight: 600 }} }},
+        xAxis: xAxis(labels),
+        yAxis: [valueAxis(rightTitle, right), valueAxis(leftTitle, {{ min: 0, max: 100 }}, 'right', false)],
+        series: [
+          {{ name: barLabel, type: 'bar', yAxisIndex: 1, data: bars, barWidth: '72%', itemStyle: {{ color: barColor }} }},
+          {{ name: lineLabel, type: 'line', yAxisIndex: 0, data: line, symbol: 'none', lineStyle: {{ color: palette.ink, width: 2 }}, itemStyle: {{ color: palette.ink }}, connectNulls: true }}
+        ]
+      }}, true);
+    }}
+
+    function renderLineDualChart(id, leftLabel, leftPoints, rightLabel, rightPoints, rightColor, rightTitle, fixedRight) {{
+      const visibleLeft = filterPoints(leftPoints);
+      const labels = visibleLeft.map(p => p.x);
+      const left = visibleLeft.map(p => p.y);
+      const rightValues = alignToLabels(filterPoints(rightPoints), labels);
+      charts[id]?.setOption({{
+        animation: false, color: [palette.ink, rightColor], textStyle: {{ fontFamily: 'Aptos, Segoe UI, Noto Sans TC, sans-serif' }},
+        grid: grid(38, 34, 76), tooltip: tooltip(),
+        dataZoom: xDataZoom(),
+        legend: {{ top: 0, right: 0, itemWidth: 10, itemHeight: 10, textStyle: {{ color: palette.muted, fontWeight: 600 }} }},
+        xAxis: xAxis(labels),
+        yAxis: [valueAxis('TAIEX', yRange(left, 0.08, false)), valueAxis(rightTitle, fixedRight || yRange(rightValues, 0.10, false), 'right', false)],
+        series: [
+          {{ name: leftLabel, type: 'line', yAxisIndex: 0, data: left, symbol: 'none', lineStyle: {{ color: palette.ink, width: 2 }}, itemStyle: {{ color: palette.ink }} }},
+          {{ name: rightLabel, type: 'line', yAxisIndex: 1, data: rightValues, symbol: 'none', lineStyle: {{ color: rightColor, width: 2 }}, itemStyle: {{ color: rightColor }} }}
+        ]
+      }}, true);
+    }}
+
+    function renderCandleChart(id, candles, axisName) {{
+      const visible = filterCandles(candles);
+      const labels = visible.map(c => String(c.t || c.x).slice(0, 7));
+      const rows = visible.map(c => [c.o, c.c, c.l, c.h]);
+      const range = yRange(visible.flatMap(c => [c.l, c.h]), 0.08, false);
+      charts[id]?.setOption({{
+        animation: false, tooltip: tooltip(candleTooltip), dataZoom: xDataZoom(), grid: {{ left: 74, right: 44, top: 20, bottom: 28, containLabel: false }},
+        xAxis: xAxis(labels, true), yAxis: valueAxis(axisName, range, 'left', true),
+        series: [{{
+          name: '月 K', type: 'candlestick', data: rows,
+          itemStyle: {{ color: 'rgba(228,63,82,0.45)', color0: 'rgba(21,144,111,0.45)', borderColor: '#ff6074', borderColor0: '#46b8a8' }}
+        }}]
+      }}, true);
+    }}
+
+    function renderMacdLineChart(id, data, axisName, displayTitle) {{
+      const hist = filterMonthPoints(data?.hist || []);
+      const labels = hist.map(p => p.x.slice(0, 7));
+      const values = {{
+        hist: hist.map(p => p.y),
+        dif: alignToLabels(filterMonthPoints(data?.dif || []), hist.map(p => p.x)),
+        signal: alignToLabels(filterMonthPoints(data?.signal || []), hist.map(p => p.x))
+      }};
+      const range = yRange([...values.hist, ...values.dif, ...values.signal], 0.14, false);
+      charts[id]?.setOption({{
+        animation: false, tooltip: tooltip(macdTooltip),
+        title: {{ text: displayTitle || axisName, left: 'center', top: 0, textStyle: {{ color: '#0f2748', fontSize: 14, fontWeight: 700 }} }},
+        dataZoom: xDataZoom(),
+        grid: {{ left: 74, right: 44, top: 34, bottom: 28, containLabel: false }},
+        xAxis: xAxis(labels, true), yAxis: valueAxis(axisName, range, 'left', true),
+        series: [
+          {{ name: 'OSC', type: 'bar', data: values.hist, barWidth: '62%', itemStyle: {{ color: params => params.value >= 0 ? 'rgba(228,63,82,0.38)' : 'rgba(21,144,111,0.36)' }} }},
+          {{ name: 'DIF', type: 'line', data: values.dif, symbol: 'none', lineStyle: {{ color: '#245fff', width: 2 }}, itemStyle: {{ color: '#245fff' }} }},
+          {{ name: 'MACD9', type: 'line', data: values.signal, symbol: 'none', lineStyle: {{ color: palette.amber, width: 2 }}, itemStyle: {{ color: palette.amber }} }}
+        ]
+      }}, true);
+    }}
+
+    function renderMacdGroup(prefix, data) {{
+      const marketName = prefix === 'taiex' ? 'TAIEX 上市' : 'TPEx 上櫃';
+      const axisName = prefix === 'taiex' ? 'TAIEX' : 'TPEx';
+      renderCandleChart(`chart-macd-${{prefix}}-price`, data.candles || [], axisName);
+      renderMacdLineChart(`chart-macd-${{prefix}}-weighted`, data.weighted || {{}}, 'MACD', `${{marketName}} MACD (H+L+2C)/4（三竹/玩股）`);
+      renderMacdLineChart(`chart-macd-${{prefix}}-close`, data.close || {{}}, 'MACD', `${{marketName}} MACD close（鉅亨）`);
+    }}
+
+    function renderAllCharts() {{
+      const s = DASHBOARD_DATA.series;
+      renderMainChart('chart-low', `${{DASHBOARD_DATA.meta.days}}日新低(%)`, s.lowRatio, palette.redSoft, 'TAIEX', s.taiex, '新低比例 (%)', 'TAIEX');
+      renderMainChart('chart-high', `${{DASHBOARD_DATA.meta.days}}日新高(%)`, s.highRatio, palette.greenSoft, 'TAIEX', s.taiex, '新高比例 (%)', 'TAIEX');
+      renderLineDualChart('chart-margin', 'TAIEX', s.taiex, '融資維持率', s.margin, palette.red, '融資維持率');
+      renderLineDualChart('chart-cnn', 'TAIEX', s.taiex, 'CNN Fear/Greed', s.cnn, palette.amber, 'Fear/Greed', {{ min: 0, max: 100 }});
+      renderMacdGroup('taiex', DASHBOARD_DATA.macd.taiex);
+      renderMacdGroup('tpex', DASHBOARD_DATA.macd.tpex);
+      resizeCharts();
+    }}
+
+    function initCharts() {{
+      ['chart-low', 'chart-high', 'chart-margin', 'chart-cnn', 'chart-macd-taiex-price', 'chart-macd-taiex-weighted', 'chart-macd-taiex-close', 'chart-macd-tpex-price', 'chart-macd-tpex-weighted', 'chart-macd-tpex-close'].forEach(initChart);
+      renderAllCharts();
+      loadEvents();
+      loadCycles();
+    }}
+
+    window.addEventListener('resize', resizeCharts);
+    window.addEventListener('DOMContentLoaded', initCharts);
   </script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
@@ -788,12 +1056,12 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
     }}
     .md-content h1 {{
       font-size: 22px; font-weight: 700; color: #111;
-      border-bottom: 2px solid #2979c8; padding-bottom: 8px; margin-top: 32px; margin-bottom: 16px;
+      border-bottom: 2px solid var(--blue); padding-bottom: 8px; margin-top: 32px; margin-bottom: 16px;
       text-align: left;
     }}
     .md-content h2 {{
       font-size: 20px; font-weight: 700; color: #1a1a1a;
-      border-left: 4px solid #2979c8; padding-left: 12px;
+      border-left: 4px solid var(--blue); padding-left: 12px;
       margin-top: 28px; margin-bottom: 10px; border-bottom: none;
       text-align: left;
     }}
@@ -833,7 +1101,7 @@ def _write_html(figs: list, end_date: str, summary_html: str = ""):
       background: none; padding: 0; color: #2d2d2d; font-size: 16px;
     }}
     .md-content blockquote {{
-      border-left: 4px solid #2979c8; margin: 12px 0;
+      border-left: 4px solid var(--blue); margin: 12px 0;
       padding: 10px 18px; background: #f0f6ff; color: #444;
       border-radius: 0 6px 6px 0;
     }}
@@ -912,17 +1180,19 @@ def _mock_main_data(n_days: int = 365 * 10) -> tuple:
 def run_dashboard_test():
     today         = date.today()
     end_date      = today.strftime("%Y-%m-%d")
-    default_start = (today - relativedelta(years=3)).strftime("%Y-%m-%d")
+    default_start = (today - relativedelta(months=6)).strftime("%Y-%m-%d")
 
     df_hl, df_taiex, df_margin, df_cnn = _mock_main_data()
     df_taiex_macd = _mock_macd_data()
     df_tpex_macd  = _mock_macd_data()
 
-    figs = _build_six_charts(df_hl, df_taiex, df_margin, df_cnn,
-                              df_taiex_macd, df_tpex_macd,
-                              holidays=[], default_start=default_start, end_date=end_date)
+    payload = _build_dashboard_payload(
+        df_hl, df_taiex, df_margin, df_cnn,
+        df_taiex_macd, df_tpex_macd,
+        default_start, end_date,
+    )
     summary = _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tpex_macd)
-    _write_html(figs, end_date, summary)
+    _write_html(payload, end_date, summary)
 
 
 if __name__ == "__main__":
