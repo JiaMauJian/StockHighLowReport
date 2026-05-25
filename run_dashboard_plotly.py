@@ -262,8 +262,10 @@ def _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tp
     high_c,  high_p    = latest2(df_hl,    "high_ratio")
     margin_c, margin_p = latest2(df_margin, "TotalExchangeMarginMaintenance")
     cnn_c,   cnn_p     = latest2(df_cnn,   "fear_greed")
-    tosc_c,  tosc_p    = latest2(df_taiex_macd, "hist_c")
-    posc_c,  posc_p    = latest2(df_tpex_macd,  "hist_c")
+    taiex_w_osc_c, taiex_w_osc_p = latest2(df_taiex_macd, "hist_w")
+    taiex_c_osc_c, taiex_c_osc_p = latest2(df_taiex_macd, "hist_c")
+    tpex_w_osc_c,  tpex_w_osc_p  = latest2(df_tpex_macd,  "hist_w")
+    tpex_c_osc_c,  tpex_c_osc_p  = latest2(df_tpex_macd,  "hist_c")
 
     # ── 組合卡片 ───────────────────────────────────────────────
     cards = "".join([
@@ -283,12 +285,18 @@ def _build_summary_html(df_hl, df_taiex, df_margin, df_cnn, df_taiex_macd, df_tp
         card("CNN Fear/Greed",
              f"{cnn_c:.0f}" if cnn_c is not None else "N/A",
              delta_tag(cnn_c, cnn_p, ".0f")),
-        card("上市 MACD OSC",
-             f"{tosc_c:.2f}" if tosc_c is not None else "N/A",
-             delta_tag(tosc_c, tosc_p, ".2f")),
-        card("上櫃 MACD OSC",
-             f"{posc_c:.2f}" if posc_c is not None else "N/A",
-             delta_tag(posc_c, posc_p, ".2f")),
+        card("上市 MACD OSC（三竹）",
+             f"{taiex_w_osc_c:.2f}" if taiex_w_osc_c is not None else "N/A",
+             delta_tag(taiex_w_osc_c, taiex_w_osc_p, ".2f")),
+        card("上市 MACD OSC（鉅亨）",
+             f"{taiex_c_osc_c:.2f}" if taiex_c_osc_c is not None else "N/A",
+             delta_tag(taiex_c_osc_c, taiex_c_osc_p, ".2f")),
+        card("上櫃 MACD OSC（三竹）",
+             f"{tpex_w_osc_c:.2f}" if tpex_w_osc_c is not None else "N/A",
+             delta_tag(tpex_w_osc_c, tpex_w_osc_p, ".2f")),
+        card("上櫃 MACD OSC（鉅亨）",
+             f"{tpex_c_osc_c:.2f}" if tpex_c_osc_c is not None else "N/A",
+             delta_tag(tpex_c_osc_c, tpex_c_osc_p, ".2f")),
     ])
     return f'<div class="summary-bar">{cards}</div>'
 
