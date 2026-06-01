@@ -227,19 +227,42 @@
       button.classList.add('active');
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
       document.getElementById(`tab-${name}`).classList.add('active');
+      if (name === 'events') {
+        loadEvents();
+      } else if (name === 'cycles') {
+        loadCycles();
+      }
       setTimeout(resizeCharts, 40);
     }
 
+    async function renderMarkdownFile(targetId, filename) {
+      const el = document.getElementById(targetId);
+      if (!el || el.dataset.loaded) return;
+      try {
+        const resp = await fetch(filename);
+        if (!resp.ok) throw new Error('not found');
+        const text = await resp.text();
+        if (window.marked) {
+          marked.setOptions({ gfm: true, breaks: true });
+          el.innerHTML = marked.parse(text);
+        } else {
+          el.textContent = text;
+        }
+        el.classList.remove('empty-state');
+        el.dataset.loaded = '1';
+      } catch (err) {
+        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:18px; font-weight:600;">找不到 ${filename}</div>
+        </div>`;
+      }
+    }
+
     function loadEvents() {
-      const tbody = document.getElementById('events-body');
-      if (!tbody || !DASHBOARD_DATA.events?.length) return;
-      tbody.innerHTML = DASHBOARD_DATA.events.map(row => `<tr><td>${row.Date}</td><td>${row.Event}</td><td>${row.TAIEX}</td><td>${row.New_Low_Ratio}</td><td>${row.New_High_Ratio}</td><td>${row.Margin_Maintenance}</td><td>${row.CNN_Fear_Greed}</td></tr>`).join('');
+      renderMarkdownFile('events-content', 'taiwan_market_events.md');
     }
 
     function loadCycles() {
-      const tbody = document.getElementById('cycles-body');
-      if (!tbody || !DASHBOARD_DATA.cycles?.length) return;
-      tbody.innerHTML = DASHBOARD_DATA.cycles.map(row => `<tr><td>${row.start_date}</td><td>${row.end_date}</td><td>${row.days}</td><td>${row.trading_days}</td><td>${row.start_value}</td><td>${row.end_value}</td><td>${row.trough_value}</td><td>${row.max_drawdown_pct}</td></tr>`).join('');
+      renderMarkdownFile('cycles-content', 'taiwan_market_cycles.md');
     }
 
     function initChart(id) {

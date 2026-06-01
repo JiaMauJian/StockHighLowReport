@@ -449,8 +449,18 @@ def _load_events_html() -> str:
 
 
 
+def _load_markdown_json(filename: str) -> str:
+    path = os.path.join(os.path.dirname(__file__), filename)
+    if not os.path.exists(path):
+        return "null"
+    with open(path, encoding="utf-8") as f:
+        return json.dumps(f.read(), ensure_ascii=False).replace("</", "<\\/")
+
+
 def _write_html(payload: dict, end_date: str, summary_html: str = ""):
     payload_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    events_markdown_json = _load_markdown_json("taiwan_market_events.md")
+    cycles_markdown_json = _load_markdown_json("taiwan_market_cycles.md")
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -666,6 +676,8 @@ def _write_html(payload: dict, end_date: str, summary_html: str = ""):
 
   <script>
     const DASHBOARD_DATA = {payload_json};
+    const EVENTS_MARKDOWN = {events_markdown_json};
+    const CYCLES_MARKDOWN = {cycles_markdown_json};
     const charts = {{}};
     const chartIds = [];
     const activeRange = {{ min: DASHBOARD_DATA.meta.defaultStart, max: DASHBOARD_DATA.meta.endDate }};
@@ -683,16 +695,31 @@ def _write_html(payload: dict, end_date: str, summary_html: str = ""):
       setTimeout(resizeCharts, 40);
     }}
 
+    function renderMarkdown(targetId, markdown, missingName) {{
+      const el = document.getElementById(targetId);
+      if (!el || el.dataset.loaded) return;
+      if (!markdown) {{
+        el.innerHTML = `<div style="text-align:center; padding:60px; color:#888;">
+          <div style="font-size:18px; font-weight:600;">找不到 ${{missingName}}</div>
+        </div>`;
+        return;
+      }}
+      if (window.marked) {{
+        marked.setOptions({{ gfm: true, breaks: true }});
+        el.innerHTML = marked.parse(markdown);
+      }} else {{
+        el.textContent = markdown;
+      }}
+      el.classList.remove('empty-state');
+      el.dataset.loaded = '1';
+    }}
+
     function loadEvents() {{
-      const tbody = document.getElementById('events-body');
-      if (!tbody || !DASHBOARD_DATA.events?.length) return;
-      tbody.innerHTML = DASHBOARD_DATA.events.map(row => `<tr><td>${{row.Date}}</td><td>${{row.Event}}</td><td>${{row.TAIEX}}</td><td>${{row.New_Low_Ratio}}</td><td>${{row.New_High_Ratio}}</td><td>${{row.Margin_Maintenance}}</td><td>${{row.CNN_Fear_Greed}}</td></tr>`).join('');
+      renderMarkdown('events-content', EVENTS_MARKDOWN, 'taiwan_market_events.md');
     }}
 
     function loadCycles() {{
-      const tbody = document.getElementById('cycles-body');
-      if (!tbody || !DASHBOARD_DATA.cycles?.length) return;
-      tbody.innerHTML = DASHBOARD_DATA.cycles.map(row => `<tr><td>${{row.start_date}}</td><td>${{row.end_date}}</td><td>${{row.days}}</td><td>${{row.trading_days}}</td><td>${{row.start_value}}</td><td>${{row.end_value}}</td><td>${{row.trough_value}}</td><td>${{row.max_drawdown_pct}}</td></tr>`).join('');
+      renderMarkdown('cycles-content', CYCLES_MARKDOWN, 'taiwan_market_cycles.md');
     }}
 
     function initChart(id) {{
